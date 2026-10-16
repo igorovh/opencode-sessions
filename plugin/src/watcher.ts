@@ -1,30 +1,29 @@
 import type { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client"
-import { messages, rootSession } from "./sessions.ts"
+import { createNotifier, type Kind } from "./notifier.ts"
+import { getSession, messages, rootSession } from "./sessions.ts"
 import type { State } from "./state.ts"
-import { escapeAttr, messageText, oneLine, title, truncate } from "./text.ts"
+import { messageText, truncate } from "./text.ts"
 
 type Context = Plugin.Context
 
-type Kind = "finished" | "failed" | "interrupted" | "permission" | "question"
-
-// The TUI renders synthetic "subagent" notices as a clickable row that opens metadata.childID.
-const STATE: Record<Kind, string> = {
-  finished: "completed",
-  failed: "error",
-  interrupted: "cancelled",
-  permission: "needs permission",
-  question: "has a question",
-}
-
 const ASSISTANT_AGENT = "assistant"
+
+// Plugin reloads can leave an old instance subscribed; only the newest one may notify, and dedupe is shared.
+const registry: { generation: number; seen: Set<string> } = ((globalThis as any).__opencodeAssistantWatcher ??= {
+  generation: 0,
+  seen: new Set<string>(),
+})
 
 export function startWatcher(ctx: Context, state: State): () => void {
   const controller = new AbortController()
-  const seen = new Set<string>()
+  const generation = ++registry.generation
+  const seen = registry.seen
+  const live = () => !controller.signal.aborted && registry.generation === generation
+  const notifier = createNotifier(ctx, live)
 
   const once = (key: string) => {
-    if (seen.has(key)) return false
+    if (!live() || seen.has(key)) return false
     seen.add(key)
     if (seen.size > 2000) seen.delete(seen.values().next().value!)
     return true
@@ -34,22 +33,7 @@ export function startWatcher(ctx: Context, state: State): () => void {
     const watch = await state.watch(session.id)
     const target = watch?.notify ?? (await state.home())
     if (!target || target === session.id) return
-    const name = title(session)
-    await ctx.session.synthetic({
-      sessionID: target,
-      description: oneLine(detail, 200),
-      text:
-        `<session-event sessionID="${session.id}" title="${escapeAttr(name)}" ` +
-        `directory="${escapeAttr(session.location.directory)}" event="${kind}">\n${body}\n</session-event>`,
-      metadata: {
-        source: "subagent",
-        childID: session.id,
-        agent: oneLine(name, 48),
-        state: STATE[kind],
-        assistant: kind,
-      },
-      resume: false,
-    })
+    notifier.add(target, { session, kind, detail, body })
   }
 
   async function lastReply(sessionID: string): Promise<string> {
@@ -64,6 +48,11 @@ export function startWatcher(ctx: Context, state: State): () => void {
     const home = await state.home()
     if (session.id === home) return
     return session
+  }
+
+  async function isAssistant(sessionID: string) {
+    if (sessionID === (await state.home())) return true
+    return (await getSession(sessionID))?.agent === ASSISTANT_AGENT
   }
 
   async function handle(event: OpenCodeEvent) {
@@ -94,6 +83,10 @@ export function startWatcher(ctx: Context, state: State): () => void {
       }
       case "session.execution.succeeded": {
         if (!once(event.id)) return
+        if (await isAssistant(event.data.sessionID)) {
+          await notifier.hideSilentTurn(event.data.sessionID)
+          return
+        }
         if (!(await state.watch(event.data.sessionID))) return
         const session = await relevant(event.data.sessionID)
         if (!session || session.id !== event.data.sessionID) return
@@ -114,9 +107,10 @@ export function startWatcher(ctx: Context, state: State): () => void {
   }
 
   void (async () => {
-    while (!controller.signal.aborted) {
+    while (live()) {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          if (!live()) return
           void handle(event as OpenCodeEvent).catch((error) => console.error("[assistant] event failed", error))
         }
       } catch (error) {
@@ -127,5 +121,8 @@ export function startWatcher(ctx: Context, state: State): () => void {
     }
   })()
 
-  return () => controller.abort()
+  return () => {
+    controller.abort()
+    notifier.stop()
+  }
 }

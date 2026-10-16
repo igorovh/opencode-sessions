@@ -3,11 +3,17 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { BoxRenderable, TextRenderable, type MouseEvent } from "@opentui/core"
 import type { SessionInfo } from "@opencode/client"
+import { AssistantRpc } from "./rpc.ts"
 
 type TuiContext = Plugin.Context
 
 const SESSION_ID = /ses_[A-Za-z0-9]+/g
 const ASSISTANT_AGENT = "assistant"
+
+function eventSessionID(data: unknown): string | undefined {
+  const value = (data as { sessionID?: unknown } | undefined)?.sessionID
+  return typeof value === "string" ? value : undefined
+}
 
 function openSession(context: TuiContext, sessionID: string) {
   if (context.ui.tabs.enabled() && context.ui.tabs.focus(sessionID)) return
@@ -71,15 +77,16 @@ async function showInbox(context: TuiContext) {
     const metadata = message.metadata ?? {}
     const childID = typeof metadata.childID === "string" ? metadata.childID : undefined
     if (!childID || typeof metadata.assistant !== "string") return []
+    const category = new Date(message.time.created).toLocaleString()
+    const events = Array.isArray(metadata.events) ? metadata.events : []
+    const batched = events.flatMap((item) => {
+      const event = item as { sessionID?: unknown; title?: unknown; kind?: unknown }
+      if (typeof event.sessionID !== "string") return []
+      return [{ title: `${String(event.title ?? event.sessionID)} · ${String(event.kind)}`, value: event.sessionID, category }]
+    })
+    if (batched.length > 0) return batched
     const name = typeof metadata.agent === "string" ? metadata.agent : childID
-    return [
-      {
-        title: `${name} · ${metadata.assistant}`,
-        value: childID,
-        description: message.description,
-        category: new Date(message.time.created).toLocaleString(),
-      },
-    ]
+    return [{ title: `${name} · ${metadata.assistant}`, value: childID, description: message.description, category }]
   })
   const selected = await context.ui.dialog.select({
     title: "Assistant notifications",
@@ -122,7 +129,23 @@ export default Plugin.define({
       return box
     })
     const slot = context.ui.slot({ append: "app", render: () => <Commands context={context} /> })
+    const rpc = context.client.rpc(AssistantRpc)
+    const stopOpen = rpc.events.on("tab.open", (event) => {
+      const sessionID = eventSessionID(event.data)
+      if (!sessionID) return
+      // Sync first so the new tab shows the session title instead of a placeholder.
+      context.data.session
+        .sync(sessionID)
+        .catch(() => {})
+        .finally(() => context.ui.tabs.open(sessionID))
+    })
+    const stopClose = rpc.events.on("tab.close", (event) => {
+      const sessionID = eventSessionID(event.data)
+      if (sessionID) context.ui.tabs.close(sessionID)
+    })
     return () => {
+      stopOpen()
+      stopClose()
       unregister()
       slot()
     }

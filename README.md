@@ -16,8 +16,17 @@ A personal assistant session for OpenCode 2. Open one tab in this directory. The
 
 ## Tools
 
-`assistant_sessions`, `assistant_search`, `assistant_read`, `assistant_send`, `assistant_new`, `assistant_watch`,
-`assistant_unwatch`.
+`assistant_sessions`, `assistant_search`, `assistant_read`, `assistant_send`, `assistant_new`, `assistant_close`,
+`assistant_watch`, `assistant_unwatch`.
+
+`assistant_new` adds the new session as a background tab in every open TUI. It does not switch your active tab.
+Pass `open: false` to skip the tab.
+
+`assistant_close` closes a session's tab in every open TUI and stops watching it. The session and its history stay.
+It refuses while the session is running or waiting for a permission or an answer.
+
+Tabs belong to the TUI, so the server plugin asks the TUI plugin to open or close them through RPC events. A TUI that
+is not running at that moment misses the event, and nothing happens when session tabs are disabled.
 
 `assistant_new` and `assistant_send` accept optional `model` (`"providerID/modelID"`, e.g. `"anthropic/claude-opus-5-5"`)
 and `variant` (e.g. `"medium"`; requires `model`). `assistant_new` creates the session on that model.
@@ -31,6 +40,17 @@ Without `model` the default model is used, as before.
 
 Notifications go to the assistant session that last used a tool. The assistant never answers permissions or
 questions for you.
+
+Each notification starts an assistant turn:
+
+- It is a `session.synthetic` message with the default `resume`, so it wakes the assistant and stays a clickable row.
+  It uses `delivery: "queue"`, so it never interrupts a running turn.
+- Events that arrive within 2 s go into one message. While the assistant is working, events keep collecting and are
+  sent as one message when it is idle. Repeated identical events are dropped.
+- The assistant decides whether to answer. If not, it replies exactly `NO_REPLY`, and the plugin deletes that turn
+  with `session.revert.stage({ files: false })` and `session.revert.commit`. Files are not touched, and the
+  notification itself stays. The plugin skips the cleanup if anything else happened after the notification or input
+  is queued, because a revert would delete it.
 
 ## Development
 

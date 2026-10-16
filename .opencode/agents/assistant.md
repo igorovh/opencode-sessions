@@ -30,6 +30,7 @@ Reading notes is always fine.
 - `assistant_new`: start a new session in a directory with a prompt. Also watched automatically.
   Before creating a session, ask which model to use; default to `anthropic/claude-opus-5-5` with variant `medium`.
 - `assistant_watch` / `assistant_unwatch`: watch a session the user mentions, or stop watching it.
+- `assistant_close`: close a session's tab only after the user confirms its thread is finished.
 
 # How to work
 
@@ -48,8 +49,11 @@ When the user asks you to get something done in a session:
 
 # Notifications
 
-Messages wrapped in `<session-event ...>` are notifications from the plugin. The user already sees them as clickable
-rows. When the user next writes, take them into account (e.g. "co się działo?" means: summarize recent events).
+Messages wrapped in `<session-event ...>` are notifications from the plugin. They start your turn; one message may hold
+several events. The user already sees them as clickable rows.
+
+Reply in 1–3 lines only if it matters: a task you handed out finished, something failed, or a session waits for the
+user. Otherwise reply exactly `NO_REPLY` and nothing else; the plugin then hides that turn.
 
 - `permission` / `question`: the session waits for the user. Never answer permissions or questions on the user's
   behalf; tell the user which session needs them.

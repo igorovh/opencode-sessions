@@ -67,7 +67,12 @@ async function requireSession(sessionID: string): Promise<SessionInfo> {
   return session
 }
 
-export function buildTools(ctx: Context, state: State): ToolDef[] {
+export interface Tabs {
+  open(sessionID: string): Promise<void>
+  close(sessionID: string): Promise<void>
+}
+
+export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   // The assistant session that last used a tool becomes home, where alerts from unwatched sessions go.
   const touch = async (context: ToolContext) => {
     if (context.agent === ASSISTANT_AGENT) await state.setHome(context.sessionID)
@@ -279,8 +284,9 @@ export function buildTools(ctx: Context, state: State): ToolDef[] {
     name: "assistant_new",
     description:
       "Start a new session in a directory with an initial prompt, then return immediately. The new session is " +
-      "watched automatically and appears as a normal tab. Pass model/variant to choose the model; otherwise the " +
-      "project default is used.",
+      "watched automatically and, unless open is false, added as a background tab in the user's open TUIs " +
+      "without switching their active tab. Pass model/variant to choose the model; otherwise the project " +
+      "default is used.",
     input: {
       type: "object",
       properties: {
@@ -289,6 +295,7 @@ export function buildTools(ctx: Context, state: State): ToolDef[] {
         title: { type: "string" },
         agent: { type: "string", description: "Agent ID, e.g. build or plan. Defaults to the project default." },
         note: { type: "string" },
+        open: { type: "boolean", description: "Add the session as a background tab (default true)." },
         ...MODEL_PROPERTIES,
       },
       required: ["directory", "text"],
@@ -301,6 +308,7 @@ export function buildTools(ctx: Context, state: State): ToolDef[] {
         title?: string
         agent?: string
         note?: string
+        open?: boolean
         model?: string
         variant?: string
       },
@@ -317,7 +325,44 @@ export function buildTools(ctx: Context, state: State): ToolDef[] {
       })
       await ctx.session.prompt({ sessionID: session.id, text: input.text })
       await state.addWatch({ sessionID: session.id, notify: context.sessionID, since: Date.now(), note: input.note })
-      return `Created and started ${link(session)}${describeModel(model)}. Watching it.`
+      const open = input.open ?? true
+      if (open) await tabs.open(session.id)
+      return (
+        `Created and started ${link(session)}${describeModel(model)}. Watching it.` +
+        (open ? " Asked open TUIs to add it as a background tab." : "")
+      )
+    },
+  }
+
+  const close: ToolDef = {
+    name: "assistant_close",
+    description:
+      "Close a session's tab in the user's open TUIs and stop watching it. The session and its history are kept. " +
+      "Refuses while the session is running or waiting for a permission or an answer. Only use it after the user " +
+      "confirms the thread is finished.",
+    input: {
+      type: "object",
+      properties: { sessionID: { type: "string" } },
+      required: ["sessionID"],
+      additionalProperties: false,
+    },
+    async execute(input: { sessionID: string }, context) {
+      await touch(context)
+      if (input.sessionID === context.sessionID) throw new Error("Cannot close your own session.")
+      const session = await requireSession(input.sessionID)
+      const client = await api()
+      const [active, waiting] = await Promise.all([running(), attention(client, session.id)])
+      const needs = [
+        ...waiting.permissions.map((p) => `permission: ${p.action} ${p.resources.join(", ")}`),
+        ...waiting.forms.map((f) => `question: ${f.title}`),
+      ]
+      if (needs.length > 0) {
+        throw new Error(`Not closing ${link(session)}: it is waiting for the user (${needs.join("; ")}).`)
+      }
+      if (active.has(session.id)) throw new Error(`Not closing ${link(session)}: it is still running.`)
+      await state.removeWatch(session.id)
+      await tabs.close(session.id)
+      return `Closed the tab of ${link(session)} in open TUIs and stopped watching it. The session is kept.`
     },
   }
 
@@ -356,7 +401,7 @@ export function buildTools(ctx: Context, state: State): ToolDef[] {
     },
   }
 
-  return [sessions, read, search, send, create, watch, unwatch]
+  return [sessions, read, search, send, create, close, watch, unwatch]
 }
 
 export async function registerTools(ctx: Context, tools: ToolDef[]) {
