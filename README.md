@@ -29,47 +29,68 @@ The assistant does not write code itself, and it never answers permissions or qu
 ## Requirements
 
 - OpenCode V2, 2.0.26 or newer.
-- [Bun](https://bun.sh) to install the plugin's dependencies.
 
 ## Install
 
-1. Clone the repository and install the plugin's dependencies:
+Install the plugin from GitHub with the OpenCode CLI:
 
-   ```sh
-   git clone https://github.com/igorovh/opencode-assistant.git
-   cd opencode-assistant/plugin
-   bun install
-   ```
+```sh
+opencode plugin add github:igorovh/opencode-assistant
+```
 
-2. Add the plugin to the TUI. The TUI loads plugins only for the directory it was started in, so add the plugin to
-   your global TUI config, `~/.config/opencode/cli.json`. This gives every TUI the tabs, the session links and `/go`:
+This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. One entry loads both
+parts: the server part (the `assistant` agent, its tools and the notifications) and the TUI part (tabs, session
+links and `/go`). Restart OpenCode afterwards.
 
-   ```json
-   {
-     "plugins": ["/absolute/path/to/opencode-assistant/plugin"]
-   }
-   ```
+You can also add the entry to the config yourself:
 
-   If `cli.json` already has a `plugins` array, add the path to it.
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["github:igorovh/opencode-assistant"]
+}
+```
 
-3. Start OpenCode in the repository directory:
+Update or remove it later:
 
-   ```sh
-   cd opencode-assistant
-   opencode
-   ```
+```sh
+opencode plugin update github:igorovh/opencode-assistant
+opencode plugin remove github:igorovh/opencode-assistant
+```
 
-   `opencode.jsonc` in this directory makes `assistant` the default agent and loads the server plugin (`./plugin`).
-   Keep this tab open; it is the assistant's home.
+## Getting started
 
-## Layout
+1. Pick a directory to be the assistant's home, for example `~/assistant`. Its notes go to `memory/` there.
+2. Start OpenCode in that directory and switch to the **Assistant** agent (`shift+tab` cycles agents).
+3. Keep this tab open. Ask it things like "how are we doing with the checkout launch?" or "start a session in
+   ~/code/app that fixes the flaky login test".
 
-| Path | What it is |
-|---|---|
-| `opencode.jsonc` | Sets `assistant` as the default agent and loads `./plugin`. |
-| `.opencode/agents/assistant.md` | The agent's instructions. Edit them to change how it works. |
-| `memory/` | Your notes. The agent writes here only when you ask. Git ignores it, so notes stay on your machine. |
-| `plugin/` | Server plugin (tools and event watcher) and TUI plugin (tabs, session links, `/go`). |
+To open the home directory with the assistant already selected, add an `opencode.jsonc` there:
+
+```jsonc
+{ "default_agent": "assistant" }
+```
+
+`memory/` holds plain Markdown notes: `memory/index.md` lists topics, and `memory/topics/<topic>.md` holds one
+topic each. The assistant reads them freely but writes only when you ask it to. If the home directory is a git
+repository, add `memory/` to its `.gitignore` to keep notes private.
+
+## Options
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "github:igorovh/opencode-assistant",
+      "options": { "model": "anthropic/claude-opus-5-5", "variant": "medium" }
+    }
+  ]
+}
+```
+
+- `model`: the model the assistant suggests for new sessions, as `"providerID/modelID"`. Without it, the assistant
+  asks and otherwise uses your default model.
+- `variant`: the model variant to suggest with `model`.
 
 ## Tools
 
@@ -125,7 +146,8 @@ a collapsed group stays hidden until you open the group.
 ## Limitations
 
 - A TUI that is not running when a tab event is sent misses it. The tool result then says no TUI confirmed it.
-- Tabs, session links and `/go` need the plugin in `~/.config/opencode/cli.json` (step 2 of the install).
+- Tabs, session links and `/go` need the plugin in the global config. A plugin added only to a project's
+  `opencode.jsonc` is not loaded by TUIs started in other directories.
 - `assistant_search` scans only recent sessions (40 by default, 150 at most) and their recent messages.
 - Notifications go to one assistant session: the one that last used a tool. Sessions that use the `assistant` agent
   never notify.
@@ -134,15 +156,25 @@ a collapsed group stays hidden until you open the group.
 
 ## Development
 
+Requires [Bun](https://bun.sh).
+
 ```sh
-cd plugin
+git clone https://github.com/igorovh/opencode-assistant.git
+cd opencode-assistant
 bun install
 bun run typecheck
 ```
 
-OpenCode reloads the plugin whenever a file in `plugin/` changes.
+To run your checkout instead of the published plugin, put its path in `plugins` and restart OpenCode. After that,
+OpenCode reloads the plugin whenever a file changes.
 
-[`demo/README.md`](demo/README.md) describes how the demo GIF was recorded.
+```jsonc
+{
+  "plugins": ["/path/to/opencode-assistant"]
+}
+```
+
+The agent's instructions are in `src/agent.md`.
 
 ## License
 
