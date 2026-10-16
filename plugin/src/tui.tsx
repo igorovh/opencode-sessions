@@ -130,18 +130,33 @@ export default Plugin.define({
     })
     const slot = context.ui.slot({ append: "app", render: () => <Commands context={context} /> })
     const rpc = context.client.rpc(AssistantRpc)
-    const stopOpen = rpc.events.on("tab.open", (event) => {
+    // RPC methods route by location, so answer at the location of the server plugin that emitted the event.
+    const ack = (event: { data: unknown; location: { directory: string } }, result: string) => {
+      const requestID = (event.data as { requestID?: unknown }).requestID
+      if (typeof requestID !== "string") return
+      rpc.ack({ requestID, result }, { location: { directory: event.location.directory } }).catch(() => {})
+    }
+    const stopOpen = rpc.events.on("tab.open", async (event) => {
       const sessionID = eventSessionID(event.data)
       if (!sessionID) return
+      const focus = (event.data as { focus?: unknown }).focus !== false
       // Sync first so the new tab shows the session title instead of a placeholder.
-      context.data.session
-        .sync(sessionID)
-        .catch(() => {})
-        .finally(() => context.ui.tabs.open(sessionID))
+      await context.data.session.sync(sessionID).catch(() => {})
+      let result: string
+      if (focus) {
+        result = context.ui.tabs.focus(sessionID) ? "focused" : "navigated (tabs disabled)"
+        if (result !== "focused") context.ui.router.navigate({ type: "session", sessionID })
+      } else {
+        result = context.ui.tabs.open(sessionID) ? "opened in background" : "not opened (tabs disabled)"
+      }
+      const name = context.data.session.get(sessionID)?.title ?? sessionID
+      context.ui.toast.show({ title: "Assistant", message: `${name}: ${result}`, variant: "info", duration: 2500 })
+      ack(event, result)
     })
     const stopClose = rpc.events.on("tab.close", (event) => {
       const sessionID = eventSessionID(event.data)
-      if (sessionID) context.ui.tabs.close(sessionID)
+      if (!sessionID) return
+      ack(event, context.ui.tabs.close(sessionID) ? "closed" : "no open tab")
     })
     return () => {
       stopOpen()

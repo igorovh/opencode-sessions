@@ -67,9 +67,18 @@ async function requireSession(sessionID: string): Promise<SessionInfo> {
   return session
 }
 
+/** Tab requests resolve to what the connected TUIs reported doing; empty when none answered in time. */
 export interface Tabs {
-  open(sessionID: string): Promise<void>
-  close(sessionID: string): Promise<void>
+  open(sessionID: string, focus: boolean): Promise<string[]>
+  close(sessionID: string): Promise<string[]>
+}
+
+const NO_TUI =
+  "No TUI confirmed it. The assistant TUI plugin is probably not loaded there: add the plugin directory to " +
+  '"plugins" in ~/.config/opencode/cli.json and restart the TUI.'
+
+function tabReport(results: string[]): string {
+  return results.length > 0 ? `TUI: ${results.join(", ")}.` : NO_TUI
 }
 
 export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
@@ -284,9 +293,9 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     name: "assistant_new",
     description:
       "Start a new session in a directory with an initial prompt, then return immediately. The new session is " +
-      "watched automatically and, unless open is false, added as a background tab in the user's open TUIs " +
-      "without switching their active tab. Pass model/variant to choose the model; otherwise the project " +
-      "default is used.",
+      "watched automatically and, unless open is false, opened as a tab in the user's TUI. With focus (default " +
+      "true) that tab becomes the active one; with focus false it is added in the background. The result says " +
+      "whether a TUI confirmed it. Pass model/variant to choose the model; otherwise the project default is used.",
     input: {
       type: "object",
       properties: {
@@ -295,7 +304,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
         title: { type: "string" },
         agent: { type: "string", description: "Agent ID, e.g. build or plan. Defaults to the project default." },
         note: { type: "string" },
-        open: { type: "boolean", description: "Add the session as a background tab (default true)." },
+        open: { type: "boolean", description: "Open the session as a tab (default true)." },
+        focus: { type: "boolean", description: "Switch to the new tab (default true). Needs open." },
         ...MODEL_PROPERTIES,
       },
       required: ["directory", "text"],
@@ -309,6 +319,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
         agent?: string
         note?: string
         open?: boolean
+        focus?: boolean
         model?: string
         variant?: string
       },
@@ -326,11 +337,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       await ctx.session.prompt({ sessionID: session.id, text: input.text })
       await state.addWatch({ sessionID: session.id, notify: context.sessionID, since: Date.now(), note: input.note })
       const open = input.open ?? true
-      if (open) await tabs.open(session.id)
-      return (
-        `Created and started ${link(session)}${describeModel(model)}. Watching it.` +
-        (open ? " Asked open TUIs to add it as a background tab." : "")
-      )
+      const report = open ? ` ${tabReport(await tabs.open(session.id, input.focus ?? true))}` : ""
+      return `Created and started ${link(session)}${describeModel(model)}. Watching it.${report}`
     },
   }
 
@@ -361,8 +369,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       }
       if (active.has(session.id)) throw new Error(`Not closing ${link(session)}: it is still running.`)
       await state.removeWatch(session.id)
-      await tabs.close(session.id)
-      return `Closed the tab of ${link(session)} in open TUIs and stopped watching it. The session is kept.`
+      const results = await tabs.close(session.id)
+      return `Stopped watching ${link(session)}; the session is kept. ${tabReport(results)}`
     },
   }
 

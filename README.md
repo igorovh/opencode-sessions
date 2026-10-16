@@ -19,14 +19,29 @@ A personal assistant session for OpenCode 2. Open one tab in this directory. The
 `assistant_sessions`, `assistant_search`, `assistant_read`, `assistant_send`, `assistant_new`, `assistant_close`,
 `assistant_watch`, `assistant_unwatch`.
 
-`assistant_new` adds the new session as a background tab in every open TUI. It does not switch your active tab.
-Pass `open: false` to skip the tab.
+`assistant_new` opens the new session as a tab and switches to it (`focus: true` by default). Pass `focus: false` to
+add the tab in the background, or `open: false` to skip the tab. The tool result says what the TUI did (for example
+`TUI: focused.`) or that no TUI confirmed it. Each TUI also shows a short toast when it opens a tab.
 
 `assistant_close` closes a session's tab in every open TUI and stops watching it. The session and its history stay.
 It refuses while the session is running or waiting for a permission or an answer.
 
-Tabs belong to the TUI, so the server plugin asks the TUI plugin to open or close them through RPC events. A TUI that
-is not running at that moment misses the event, and nothing happens when session tabs are disabled.
+Tabs belong to the TUI, so the server plugin asks the TUI plugin to open or close them through RPC events. Each TUI
+answers through the `ack` RPC method. A TUI that is not running at that moment misses the event. When session tabs
+are disabled, `focus` navigates to the session instead.
+
+## TUI setup
+
+The TUI loads plugins only for the directory it was started in. To get tabs and `/go` in every TUI, add the plugin to
+`~/.config/opencode/cli.json`:
+
+```json
+{ "plugins": ["E:/Projekty/WebstormProjects/opencode-assistant/plugin"] }
+```
+
+This works together with `opencode-better-tabs`. That plugin only draws and reorders the host's tabs, so new tabs
+appear in their repository group. A tab added in the background to a collapsed group is hidden until you open the
+group.
 
 `assistant_new` and `assistant_send` accept optional `model` (`"providerID/modelID"`, e.g. `"anthropic/claude-opus-5-5"`)
 and `variant` (e.g. `"medium"`; requires `model`). `assistant_new` creates the session on that model.
