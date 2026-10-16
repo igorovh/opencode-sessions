@@ -1,0 +1,31 @@
+{
+  "name": "opencode-assistant",
+  "version": "0.1.0",
+  "description": "OpenCode 2 plugin: a personal assistant session that tracks, searches, drives and watches your other sessions",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode/client": "2.0.26",
+    "@opencode/plugin": "2.0.26"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.17",
+    "@opentui/solid": ">=0.5.17",
+    "solid-js": ">=1.9.0"
+  },
+  "devDependencies": {
+    "@opencode/theme": "2.0.26",
+    "@opentui/core": "0.5.17",
+    "@opentui/solid": "0.5.17",
+    "@types/bun": "latest",
+    "solid-js": "1.9.15",
+    "typescript": "5.9.3"
+  }
+}
