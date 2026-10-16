@@ -16,6 +16,7 @@ export async function registerAgent(ctx: Plugin.Context) {
   const system = template.replace("{{MODEL_HINT}}", modelHint(ctx.options))
   return ctx.agent.transform((editor) =>
     editor.update(ASSISTANT_AGENT, (agent) => {
+      agent.name = "Assistant" as never
       agent.description = "Personal assistant that tracks, searches, drives and watches your other OpenCode sessions"
       agent.mode = "primary"
       agent.color = "#7aa2f7"
