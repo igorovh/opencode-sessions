@@ -74,8 +74,8 @@ export interface Tabs {
 }
 
 const NO_TUI =
-  "No TUI confirmed it. The assistant TUI plugin is probably not loaded there: add the plugin directory to " +
-  '"plugins" in ~/.config/opencode/cli.json and restart the TUI.'
+  "No TUI confirmed it. The assistant plugin is probably not loaded in the TUI: install it globally with " +
+  '"opencode plugin add github:igorovh/opencode-assistant" and restart the TUI.'
 
 function tabReport(results: string[]): string {
   return results.length > 0 ? `TUI: ${results.join(", ")}.` : NO_TUI

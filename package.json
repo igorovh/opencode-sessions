@@ -1,9 +1,21 @@
 {
   "name": "opencode-assistant",
   "version": "0.1.0",
-  "description": "OpenCode 2 plugin: a personal assistant session that tracks, searches, drives and watches your other sessions",
+  "description": "OpenCode V2 plugin: a personal assistant session that tracks, searches, drives and watches your other sessions",
   "type": "module",
+  "license": "MIT",
+  "author": "igorovh",
+  "homepage": "https://github.com/igorovh/opencode-assistant#readme",
+  "bugs": {
+    "url": "https://github.com/igorovh/opencode-assistant/issues"
+  },
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igorovh/opencode-assistant.git"
+  },
+  "keywords": ["opencode", "opencode-plugin", "assistant", "sessions", "tui"],
+  "files": ["src", "tui.ts", "index.ts", "README.md", "LICENSE"],
   "exports": {
     ".": "./src/index.ts",
     "./tui": "./src/tui.tsx"
