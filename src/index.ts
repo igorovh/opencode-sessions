@@ -51,7 +51,7 @@ export default Plugin.define({
     return async () => {
       stop()
       await tools.dispose()
-      await agent.dispose()
+      await agent?.dispose()
       await rpc.dispose()
     }
   },

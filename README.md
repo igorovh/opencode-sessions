@@ -60,7 +60,8 @@ opencode plugin remove github:igorovh/opencode-assistant
 
 ## Getting started
 
-1. Pick a directory to be the assistant's home, for example `~/assistant`. Its notes go to `memory/` there.
+1. Pick a directory to be the assistant's home, for example `~/assistant`. Its notes go to `memory/` there. Set it
+   as the `home` option (see [Options](#options)) so the agent shows up only there.
 2. Start OpenCode in that directory and switch to the **Assistant** agent (`shift+tab` cycles agents).
 3. Keep this tab open. Ask it things like "how are we doing with the checkout launch?" or "start a session in
    ~/code/app that fixes the flaky login test".
@@ -82,7 +83,7 @@ repository, add `memory/` to its `.gitignore` to keep notes private.
   "plugins": [
     {
       "package": "github:igorovh/opencode-assistant",
-      "options": { "model": "anthropic/claude-opus-5-5", "variant": "medium" }
+      "options": { "home": "~/assistant", "model": "anthropic/claude-opus-5-5", "variant": "medium" }
     }
   ]
 }
@@ -91,6 +92,8 @@ repository, add `memory/` to its `.gitignore` to keep notes private.
 - `model`: the model the assistant suggests for new sessions, as `"providerID/modelID"`. Without it, the assistant
   asks and otherwise uses your default model.
 - `variant`: the model variant to suggest with `model`.
+- `home`: the assistant's home directory. When set, the **Assistant** agent appears only there and in its
+  subdirectories, instead of in every directory. Tools and notifications work the same either way.
 
 ## Tools
 
