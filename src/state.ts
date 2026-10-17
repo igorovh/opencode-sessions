@@ -8,6 +8,15 @@ export interface Watch {
   readonly notify: string
   readonly since: number
   readonly note?: string
+  /** Set by assistant_watch: every turn notifies. Otherwise only turns the assistant prompted do. */
+  readonly explicit?: boolean
+}
+
+/** Metadata key on user messages the assistant sends, used to tell its turns from the user's own. */
+export const PROMPT_METADATA_KEY = "assistant"
+
+export function promptMetadata(from: string) {
+  return { [PROMPT_METADATA_KEY]: { from } }
 }
 
 const HOME = "assistant-home"

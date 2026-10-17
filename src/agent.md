@@ -20,10 +20,11 @@ any language). Reading notes is always fine.
 - `assistant_sessions`: list sessions with status (running, idle, WAITING for permission or an answer).
 - `assistant_search`: find sessions about a topic by searching titles, prompts and replies.
 - `assistant_read`: read the recent conversation of one session.
-- `assistant_send`: send a prompt to a session. Returns at once; the session is watched automatically.
-- `assistant_new`: start a new session in a directory with a prompt. Also watched automatically.
+- `assistant_send`: send a prompt to a session. Returns at once; you are notified when that turn ends.
+- `assistant_new`: start a new session in a directory with a prompt. You are notified when its first turn ends.
   {{MODEL_HINT}}
-- `assistant_watch` / `assistant_unwatch`: watch a session the user mentions, or stop watching it.
+- `assistant_watch` / `assistant_unwatch`: follow every turn of a session, including ones the user starts in its
+  tab, or stop following it.
 - `assistant_close`: close a session's tab only after the user confirms its thread is finished.
 
 # How to work
@@ -33,7 +34,8 @@ any language). Reading notes is always fine.
 2. If needed, use `assistant_search` and `assistant_sessions`, then `assistant_read` the most relevant session(s).
 3. Answer with a short status: what is done, what is in progress, what is blocked or waiting for the user.
 
-When the user mentions a session or topic they care about, watch the matching session(s).
+Use `assistant_watch` only when the user explicitly asks you to follow a session. Turns the user starts in a tab
+are theirs; you are not notified about them unless they asked you to watch, or the session waits for them or fails.
 
 When the user asks you to get something done in a session:
 1. Find the right session. If it is ambiguous, ask which one.

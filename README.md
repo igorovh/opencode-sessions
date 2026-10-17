@@ -99,10 +99,10 @@ repository, add `memory/` to its `.gitignore` to keep notes private.
 | `assistant_sessions` | Lists sessions across all projects with status: running, idle, or waiting for a permission or an answer. |
 | `assistant_search` | Searches titles, prompts and replies of recent sessions for a topic. |
 | `assistant_read` | Reads the recent conversation of one session. |
-| `assistant_send` | Sends a prompt to a session and returns at once. The session is watched automatically. |
-| `assistant_new` | Starts a new session in a directory with a prompt and opens it as a tab. Also watched automatically. |
+| `assistant_send` | Sends a prompt to a session and returns at once. You are notified when that turn ends. |
+| `assistant_new` | Starts a new session in a directory with a prompt and opens it as a tab. You are notified when its first turn ends. |
 | `assistant_close` | Closes a session's tab in every open TUI and stops watching it. The session and its history stay. |
-| `assistant_watch` / `assistant_unwatch` | Starts or stops watching a session without sending it anything. |
+| `assistant_watch` / `assistant_unwatch` | Starts or stops watching every turn of a session, without sending it anything. |
 
 Details:
 
@@ -118,8 +118,21 @@ Details:
 
 What triggers a notification:
 
-- **Watched sessions:** finished, failed, interrupted, or waiting for a permission or an answer.
-- **All other sessions:** only waiting for a permission or an answer, and failures.
+- **Every session:** waiting for a permission or an answer, and failures. These always notify, so the assistant can
+  remind you, even when you started the turn yourself.
+- **Sessions the assistant gave work to** (`assistant_send`, `assistant_new`): also finished and interrupted, but
+  only for the turn the assistant started. Turns you start yourself in that tab do not notify the assistant.
+- **Sessions you asked it to watch** (`assistant_watch`): finished and interrupted for every turn, including yours.
+
+How it tells the turns apart: the assistant sends its prompts with `metadata.assistant` on the user message. When a
+turn ends, the plugin reads the session's messages since the previous `idle` message and reports the turn only if
+one of them carries that mark. Limitations:
+
+- If you type in a tab while the assistant's prompt waits in the same turn, the whole turn counts as the assistant's
+  and notifies.
+- Only the last 50 messages are checked, so a very long turn whose prompt is older than that does not notify.
+- Watches created before this change count as "work from the assistant", not as `assistant_watch`. Ask the assistant
+  to watch them again if you want every turn.
 
 Notifications go to the assistant session that last used a tool. Each one starts an assistant turn:
 

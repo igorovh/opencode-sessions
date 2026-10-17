@@ -1,5 +1,6 @@
 import type { OpenCodeClient, SessionInfo, SessionMessageInfo } from "@opencode/client"
 import { api } from "./api.ts"
+import { PROMPT_METADATA_KEY } from "./state.ts"
 
 export interface Attention {
   readonly permissions: { action: string; resources: string[]; message?: string }[]
@@ -53,6 +54,22 @@ export async function attention(client: OpenCodeClient, sessionID: string): Prom
     })),
     forms: forms.map((form) => ({ title: form.title })),
   }
+}
+
+/**
+ * Whether the latest turn of a session includes a prompt the assistant sent. A turn is everything after the
+ * previous `idle` message; the current turn's own `idle` may or may not be written yet.
+ */
+export async function promptedByAssistant(sessionID: string): Promise<boolean> {
+  const history = await messages(sessionID, 50).catch(() => [])
+  let index = history.length - 1
+  while (index >= 0 && history[index]!.type === "idle") index--
+  for (; index >= 0 && history[index]!.type !== "idle"; index--) {
+    const message = history[index]!
+    const metadata = (message as { metadata?: Record<string, unknown> }).metadata
+    if (message.type === "user" && metadata?.[PROMPT_METADATA_KEY]) return true
+  }
+  return false
 }
 
 export async function messages(sessionID: string, limit: number): Promise<SessionMessageInfo[]> {

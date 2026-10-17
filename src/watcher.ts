@@ -1,7 +1,7 @@
 import type { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client"
 import { createNotifier, type Kind } from "./notifier.ts"
-import { getSession, messages, rootSession } from "./sessions.ts"
+import { getSession, messages, promptedByAssistant, rootSession } from "./sessions.ts"
 import type { State } from "./state.ts"
 import { messageText, truncate } from "./text.ts"
 
@@ -50,6 +50,13 @@ export function startWatcher(ctx: Context, state: State): () => void {
     return session
   }
 
+  // Finished and interrupted turns notify only when the user asked to watch, or the assistant prompted the turn.
+  async function reportTurn(sessionID: string): Promise<boolean> {
+    const watch = await state.watch(sessionID)
+    if (!watch) return false
+    return watch.explicit === true || (await promptedByAssistant(sessionID))
+  }
+
   async function isAssistant(sessionID: string) {
     if (sessionID === (await state.home())) return true
     return (await getSession(sessionID))?.agent === ASSISTANT_AGENT
@@ -87,7 +94,7 @@ export function startWatcher(ctx: Context, state: State): () => void {
           await notifier.hideSilentTurn(event.data.sessionID)
           return
         }
-        if (!(await state.watch(event.data.sessionID))) return
+        if (!(await reportTurn(event.data.sessionID))) return
         const session = await relevant(event.data.sessionID)
         if (!session || session.id !== event.data.sessionID) return
         const reply = await lastReply(session.id)
@@ -97,7 +104,7 @@ export function startWatcher(ctx: Context, state: State): () => void {
       case "session.execution.interrupted": {
         if (!once(event.id)) return
         if (event.data.reason === "user" || event.data.reason === "superseded") return
-        if (!(await state.watch(event.data.sessionID))) return
+        if (!(await reportTurn(event.data.sessionID))) return
         const session = await relevant(event.data.sessionID)
         if (!session) return
         await notify(session, "interrupted", event.data.reason, `Execution interrupted: ${event.data.reason}`)

@@ -2,7 +2,7 @@ import type { Plugin } from "@opencode/plugin"
 import type { SessionInfo } from "@opencode/client"
 import { api } from "./api.ts"
 import { attention, getSession, listSessions, messages, running } from "./sessions.ts"
-import type { State } from "./state.ts"
+import { promptMetadata, type State } from "./state.ts"
 import { ago, messageText, oneLine, title, toolNames, truncate } from "./text.ts"
 
 type Context = Plugin.Context
@@ -130,7 +130,9 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
             `- ${link(session)}`,
             `  status: ${status} · updated ${ago(session.time.updated)}` +
               (session.outcome ? ` · last outcome: ${session.outcome}` : "") +
-              (watch ? ` · watched${watch.note ? ` (${watch.note})` : ""}` : ""),
+              (watch
+                ? ` · ${watch.explicit ? "watched" : "your task"}${watch.note ? ` (${watch.note})` : ""}`
+                : ""),
           ].join("\n")
         }),
       )
@@ -245,8 +247,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     name: "assistant_send",
     description:
       "Send a prompt to another session so its agent does the work, then return immediately. The session is " +
-      "watched automatically and you will receive a notification when it finishes, fails or needs the user. " +
-      "Do not wait or poll after sending. Optional model/variant switch the session's model before the prompt; " +
+      "watched automatically: you will be notified when the turn you started finishes, fails or needs the user. " +
+      "Turns the user starts in that tab do not notify you. Do not wait or poll after sending. Optional model/variant switch the session's model before the prompt; " +
       "the switch stays for later turns and, if the session is busy, also applies to its current turn.",
     input: {
       type: "object",
@@ -280,8 +282,20 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       if (input.sessionID === context.sessionID) throw new Error("Cannot send a prompt to your own session.")
       const session = await requireSession(input.sessionID)
       if (model) await ctx.session.switchModel({ sessionID: session.id, model })
-      await ctx.session.prompt({ sessionID: session.id, text: input.text, delivery: input.delivery ?? "queue" })
-      await state.addWatch({ sessionID: session.id, notify: context.sessionID, since: Date.now(), note: input.note })
+      await ctx.session.prompt({
+        sessionID: session.id,
+        text: input.text,
+        delivery: input.delivery ?? "queue",
+        metadata: promptMetadata(context.sessionID),
+      })
+      const existing = await state.watch(session.id)
+      await state.addWatch({
+        sessionID: session.id,
+        notify: context.sessionID,
+        since: Date.now(),
+        note: input.note ?? existing?.note,
+        explicit: existing?.explicit,
+      })
       return (
         `Sent to ${link(session)}${describeModel(model)}. ` +
         "Watching it; a notification will arrive when it finishes or needs the user."
@@ -334,7 +348,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
         ...(input.agent ? { agent: input.agent } : {}),
         ...(model ? { model } : {}),
       })
-      await ctx.session.prompt({ sessionID: session.id, text: input.text })
+      await ctx.session.prompt({ sessionID: session.id, text: input.text, metadata: promptMetadata(context.sessionID) })
       await state.addWatch({ sessionID: session.id, notify: context.sessionID, since: Date.now(), note: input.note })
       const open = input.open ?? true
       const report = open ? ` ${tabReport(await tabs.open(session.id, input.focus ?? true))}` : ""
@@ -377,8 +391,9 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   const watch: ToolDef = {
     name: "assistant_watch",
     description:
-      "Watch a session without sending it anything: you will be notified when it finishes a turn, fails or needs " +
-      "the user. Sessions that need permission or answers always notify, even unwatched.",
+      "Watch a session without sending it anything: you will be notified when any turn finishes (including turns " +
+      "the user starts in its tab), fails or needs the user. Use it only when the user asks to follow a session. " +
+      "Sessions that need permission or answers always notify, even unwatched.",
     input: {
       type: "object",
       properties: { sessionID: { type: "string" }, note: { type: "string" } },
@@ -388,8 +403,14 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     async execute(input: { sessionID: string; note?: string }, context) {
       await touch(context)
       const session = await requireSession(input.sessionID)
-      await state.addWatch({ sessionID: session.id, notify: context.sessionID, since: Date.now(), note: input.note })
-      return `Watching ${link(session)}.`
+      await state.addWatch({
+        sessionID: session.id,
+        notify: context.sessionID,
+        since: Date.now(),
+        note: input.note,
+        explicit: true,
+      })
+      return `Watching every turn of ${link(session)}.`
     },
   }
 
