@@ -142,10 +142,19 @@ export default Plugin.define({
       const focus = (event.data as { focus?: unknown }).focus !== false
       // Sync first so the new tab shows the session title instead of a placeholder.
       await context.data.session.sync(sessionID).catch(() => {})
+      const existing = context.ui.tabs.enabled()
+        ? context.ui.tabs.list().find((tab) => tab.sessionID === sessionID)
+        : undefined
       let result: string
       if (focus) {
-        result = context.ui.tabs.focus(sessionID) ? "focused" : "navigated (tabs disabled)"
-        if (result !== "focused") context.ui.router.navigate({ type: "session", sessionID })
+        if (context.ui.tabs.focus(sessionID)) {
+          result = !existing ? "opened and focused" : existing.active ? "already open and active" : "already open, focused"
+        } else {
+          result = "navigated (tabs disabled)"
+          context.ui.router.navigate({ type: "session", sessionID })
+        }
+      } else if (existing) {
+        result = "already open"
       } else {
         result = context.ui.tabs.open(sessionID) ? "opened in background" : "not opened (tabs disabled)"
       }

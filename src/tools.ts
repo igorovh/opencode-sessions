@@ -63,7 +63,7 @@ function describeModel(model: ModelChoice | undefined): string {
 
 async function requireSession(sessionID: string): Promise<SessionInfo> {
   const session = await getSession(sessionID)
-  if (!session) throw new Error(`Session not found: ${sessionID}`)
+  if (!session) throw new Error(`Session not found: ${sessionID}. Find the right ID with assistant_sessions or assistant_search.`)
   return session
 }
 
@@ -356,6 +356,31 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     },
   }
 
+  const open: ToolDef = {
+    name: "assistant_open",
+    description:
+      "Open an existing session as a tab in the user's TUI, e.g. when the user closed its tab and wants it back. " +
+      "With focus (default true) the tab becomes the active one; with focus false it is added in the background. " +
+      "If the tab is already open, it is only activated. Does not change watching. The result says what the TUI " +
+      "did, or that no TUI confirmed it. " +
+      LINK_HINT,
+    input: {
+      type: "object",
+      properties: {
+        sessionID: { type: "string" },
+        focus: { type: "boolean", description: "Switch to the tab (default true)." },
+      },
+      required: ["sessionID"],
+      additionalProperties: false,
+    },
+    async execute(input: { sessionID: string; focus?: boolean }, context) {
+      await touch(context)
+      const session = await requireSession(input.sessionID)
+      const results = await tabs.open(session.id, input.focus ?? true)
+      return `Asked the TUI to open ${link(session)}. ${tabReport(results)}`
+    },
+  }
+
   const close: ToolDef = {
     name: "assistant_close",
     description:
@@ -430,7 +455,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     },
   }
 
-  return [sessions, read, search, send, create, close, watch, unwatch]
+  return [sessions, read, search, send, create, open, close, watch, unwatch]
 }
 
 export async function registerTools(ctx: Context, tools: ToolDef[]) {

@@ -21,7 +21,8 @@ repository that opens as a tab right away, a clickable notification when that se
   waits or polls.
 - **Notifies you** in its tab when a watched session finishes or fails, or when any session waits for a permission or
   an answer. Each notification is a row you can click to open that session.
-- **Manages tabs.** New sessions open as tabs, and it closes a tab once you say the thread is done.
+- **Manages tabs.** New sessions open as tabs, it reopens the tab of an existing session on request, and it closes
+  a tab once you say the thread is done.
 - **Links sessions.** Session IDs in its replies render as clickable links.
 
 The assistant does not write code itself, and it never answers permissions or questions on your behalf.
@@ -104,17 +105,21 @@ repository, add `memory/` to its `.gitignore` to keep notes private.
 | `assistant_read` | Reads the recent conversation of one session. |
 | `assistant_send` | Sends a prompt to a session and returns at once. You are notified when that turn ends. |
 | `assistant_new` | Starts a new session in a directory with a prompt and opens it as a tab. You are notified when its first turn ends. |
+| `assistant_open` | Opens an existing session as a tab, or activates its tab if it is already open. Does not change watching. |
 | `assistant_close` | Closes a session's tab in every open TUI and stops watching it. The session and its history stay. |
 | `assistant_watch` / `assistant_unwatch` | Starts or stops watching every turn of a session, without sending it anything. |
 
 Details:
 
 - `assistant_new` switches to the new tab by default. Pass `focus: false` to add the tab in the background, or
-  `open: false` to skip the tab. The result says what the TUI did (for example `TUI: focused.`), or that no TUI
+  `open: false` to skip the tab. The result says what the TUI did (for example `TUI: opened and focused.`), or that no TUI
   confirmed it. Each TUI also shows a short toast when it opens a tab.
 - `assistant_new` and `assistant_send` accept an optional `model` (`"providerID/modelID"`) and `variant` (for example
   `"medium"`; requires `model`). `assistant_new` creates the session on that model. `assistant_send` switches the
   session's model before sending, and the switch stays for later turns. Without `model`, the default model is used.
+- `assistant_open` switches to the tab by default; pass `focus: false` to add it in the background. Its result
+  reports `opened and focused`, `opened in background`, `already open`, `already open, focused` or
+  `already open and active`, or that no TUI confirmed it.
 - `assistant_close` refuses while the session is running or waiting for a permission or an answer.
 
 ## Notifications

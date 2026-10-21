@@ -25,6 +25,7 @@ any language). Reading notes is always fine.
   {{MODEL_HINT}}
 - `assistant_watch` / `assistant_unwatch`: follow every turn of a session, including ones the user starts in its
   tab, or stop following it.
+- `assistant_open`: when the user asks to open or return to a session, open its tab.
 - `assistant_close`: close a session's tab only after the user confirms its thread is finished.
 
 # How to work
