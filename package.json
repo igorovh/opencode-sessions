@@ -1,43 +1,50 @@
 {
-  "name": "opencode-assistant",
-  "version": "0.1.0",
-  "description": "OpenCode V2 plugin: any session can hand work to other sessions and hear back, with reports routed only to the sender",
+  "name": "opencode-sessions",
+  "version": "0.2.0",
+  "description": "OpenCode V2 plugin: any session can start, prompt, watch, read and search your other sessions, and hear back when they finish",
   "type": "module",
   "license": "MIT",
   "author": "igorovh",
-  "homepage": "https://github.com/igorovh/opencode-assistant#readme",
+  "homepage": "https://github.com/igorovh/opencode-sessions#readme",
   "bugs": {
-    "url": "https://github.com/igorovh/opencode-assistant/issues"
+    "url": "https://github.com/igorovh/opencode-sessions/issues"
   },
   "private": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/igorovh/opencode-assistant.git"
+    "url": "git+https://github.com/igorovh/opencode-sessions.git"
   },
-  "keywords": ["opencode", "opencode-plugin", "assistant", "sessions", "tui"],
+  "keywords": ["opencode", "opencode-plugin", "opencode-v2", "sessions", "multi-agent", "orchestration", "tui"],
   "files": ["src", "tui.ts", "index.ts", "README.md", "LICENSE"],
   "exports": {
     ".": "./src/index.ts",
     "./tui": "./src/tui.tsx"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
-    "@opencode/client": "2.0.26",
-    "@opencode/plugin": "2.0.26"
+    "@opencode/client": "^2.2.5"
   },
   "peerDependencies": {
-    "@opentui/core": ">=0.5.17",
-    "@opentui/solid": ">=0.5.17",
+    "@opencode/plugin": ">=2.2.5",
+    "@opentui/core": ">=0.8.0",
+    "@opentui/solid": ">=0.8.0",
     "solid-js": ">=1.9.0"
   },
+  "peerDependenciesMeta": {
+    "@opencode/plugin": { "optional": true },
+    "@opentui/core": { "optional": true },
+    "@opentui/solid": { "optional": true },
+    "solid-js": { "optional": true }
+  },
   "devDependencies": {
-    "@opencode/theme": "2.0.26",
-    "@opentui/core": "0.5.17",
-    "@opentui/solid": "0.5.17",
-    "@types/bun": "latest",
-    "solid-js": "1.9.15",
+    "@opencode/plugin": "2.2.5",
+    "@opentui/core": "0.8.1",
+    "@opentui/solid": "0.8.1",
+    "@types/bun": "1.4.3",
+    "solid-js": "1.9.18",
     "typescript": "5.9.3"
   }
 }
