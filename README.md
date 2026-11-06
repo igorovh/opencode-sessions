@@ -7,12 +7,11 @@ sessions. When a session finishes the work you gave it, only the session that as
 > Supports OpenCode V2 2.2.5 or newer. V1 is not supported.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Asking for a status, starting a session in a new tab, a clickable notification when it finishes, and closing the tab" width="1000">
+  <img src="docs/demo.gif" alt="A session starts work in another repository, which opens as a background tab, reports back when it finishes, and is opened from /go" width="1000">
 </p>
 
-The demo was recorded with an earlier version that used a dedicated Assistant agent. The flow is the same in any
-session now: a status question answered from two sessions, a new session started in another repository that opens
-as a tab, a clickable notification when that session finishes, and closing its tab.
+The demo shows one session handing work to a new session in another repository, the report it gets when that
+session finishes, and `/go` jumping to the reporting session.
 
 ## Features
 
@@ -185,6 +184,10 @@ OpenCode reloads the plugin whenever a file changes.
   "plugins": ["/path/to/opencode-sessions"]
 }
 ```
+
+The demo GIF is recorded with [VHS](https://github.com/charmbracelet/vhs) from `docs/demo.tape`. It runs OpenCode in
+a throwaway home with fake repositories and a scripted local model (`docs/demo/mock-model.ts`), so it needs no API
+key: `DEMO_ROOT=<empty directory> vhs docs/demo.tape`.
 
 ## License
 
