@@ -1,7 +1,7 @@
 {
   "name": "opencode-assistant",
   "version": "0.1.0",
-  "description": "OpenCode V2 plugin: a personal assistant session that tracks, searches, drives and watches your other sessions",
+  "description": "OpenCode V2 plugin: any session can hand work to other sessions and hear back, with reports routed only to the sender",
   "type": "module",
   "license": "MIT",
   "author": "igorovh",

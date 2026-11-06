@@ -15,8 +15,6 @@ interface ToolDef {
   execute(input: any, context: ToolContext): Promise<string>
 }
 
-const ASSISTANT_AGENT = "assistant"
-
 const LINK_HINT = 'Reference sessions to the user with a fenced ```session block containing the session ID.'
 
 function link(session: SessionInfo): string {
@@ -56,6 +54,13 @@ function parseModel(model: string | undefined, variant: string | undefined): Mod
   return { providerID, id, ...(trimmedVariant ? { variant: trimmedVariant } : {}) }
 }
 
+function modelHint(options: Context["options"]): string {
+  const model = typeof options.model === "string" ? options.model.trim() : ""
+  const variant = typeof options.variant === "string" ? options.variant.trim() : ""
+  if (!model) return "Pass model/variant only when the user names one; otherwise the project default is used."
+  return `Unless the user names a model, use model "${model}"${variant ? ` with variant "${variant}"` : ""}.`
+}
+
 function describeModel(model: ModelChoice | undefined): string {
   if (!model) return ""
   return ` on ${model.providerID}/${model.id}${model.variant ? ` (${model.variant})` : ""}`
@@ -63,7 +68,7 @@ function describeModel(model: ModelChoice | undefined): string {
 
 async function requireSession(sessionID: string): Promise<SessionInfo> {
   const session = await getSession(sessionID)
-  if (!session) throw new Error(`Session not found: ${sessionID}. Find the right ID with assistant_sessions or assistant_search.`)
+  if (!session) throw new Error(`Session not found: ${sessionID}. Find the right ID with session_list or session_search.`)
   return session
 }
 
@@ -74,7 +79,7 @@ export interface Tabs {
 }
 
 const NO_TUI =
-  "No TUI confirmed it. The assistant plugin is probably not loaded in the TUI: install it globally with " +
+  "No TUI confirmed it. The opencode-assistant plugin is probably not loaded in the TUI: install it globally with " +
   '"opencode plugin add github:igorovh/opencode-assistant" and restart the TUI.'
 
 function tabReport(results: string[]): string {
@@ -82,13 +87,8 @@ function tabReport(results: string[]): string {
 }
 
 export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
-  // The assistant session that last used a tool becomes home, where alerts from unwatched sessions go.
-  const touch = async (context: ToolContext) => {
-    if (context.agent === ASSISTANT_AGENT) await state.setHome(context.sessionID)
-  }
-
   const sessions: ToolDef = {
-    name: "assistant_sessions",
+    name: "session_list",
     description:
       "List the user's OpenCode sessions (tabs) across all projects, newest activity first. Shows title, ID, " +
       "directory, whether it is running, idle or waiting for the user (permission/question), and whether you watch it. " +
@@ -104,14 +104,14 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { search?: string; directory?: string; limit?: number; watchedOnly?: boolean }, context) {
-      await touch(context)
       const client = await api()
       const [list, active, watches] = await Promise.all([
         listSessions({ limit: input.limit ?? 30, search: input.search, directory: input.directory }),
         running(),
         state.watches(),
       ])
-      const watched = new Map(watches.map((watch) => [watch.sessionID, watch]))
+      const own = watches.filter((watch) => watch.notify === context.sessionID)
+      const watched = new Map(own.map((watch) => [watch.sessionID, watch]))
       const filtered = list.filter(
         (session) => session.id !== context.sessionID && (!input.watchedOnly || watched.has(session.id)),
       )
@@ -131,7 +131,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
             `  status: ${status} · updated ${ago(session.time.updated)}` +
               (session.outcome ? ` · last outcome: ${session.outcome}` : "") +
               (watch
-                ? ` · ${watch.explicit ? "watched" : "your task"}${watch.note ? ` (${watch.note})` : ""}`
+                ? ` · ${watch.explicit ? "watched by you" : "your task"}${watch.note ? ` (${watch.note})` : ""}`
                 : ""),
           ].join("\n")
         }),
@@ -141,7 +141,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   }
 
   const read: ToolDef = {
-    name: "assistant_read",
+    name: "session_read",
     description:
       "Read the recent conversation of another session: user prompts, assistant replies and tool names. " +
       "Use it to answer 'how are we doing with X' after finding the session.",
@@ -156,7 +156,6 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { sessionID: string; limit?: number; maxChars?: number }, context) {
-      await touch(context)
       const client = await api()
       const session = await requireSession(input.sessionID)
       const [history, active, waiting] = await Promise.all([
@@ -186,7 +185,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   }
 
   const search: ToolDef = {
-    name: "assistant_search",
+    name: "session_search",
     description:
       "Search the text of recent sessions (titles, prompts and replies) for a topic, e.g. a feature, file or bug. " +
       "Returns matching sessions with snippets. " +
@@ -202,7 +201,6 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { query: string; sessions?: number; messagesPerSession?: number }, context) {
-      await touch(context)
       const words = input.query.toLowerCase().split(/\s+/).filter(Boolean)
       if (words.length === 0) return "Empty query."
       const matches = (text: string) => {
@@ -244,12 +242,13 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   }
 
   const send: ToolDef = {
-    name: "assistant_send",
+    name: "session_send",
     description:
-      "Send a prompt to another session so its agent does the work, then return immediately. The session is " +
-      "watched automatically: you will be notified when the turn you started finishes, fails or needs the user. " +
-      "Turns the user starts in that tab do not notify you. Do not wait or poll after sending. Optional model/variant switch the session's model before the prompt; " +
-      "the switch stays for later turns and, if the session is busy, also applies to its current turn.",
+      "Send a prompt to another session so its agent does the work, then return immediately. Only your session " +
+      "is notified, in a new turn, when the turn you started finishes, fails or needs the user. Turns the user " +
+      "starts in that tab do not notify you. Write a self-contained prompt. Do not wait, poll or re-read the " +
+      "session after sending. Optional model/variant switch the session's model before the prompt; the switch " +
+      "stays for later turns and, if the session is busy, also applies to its current turn.",
     input: {
       type: "object",
       properties: {
@@ -277,7 +276,6 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       },
       context,
     ) {
-      await touch(context)
       const model = parseModel(input.model, input.variant)
       if (input.sessionID === context.sessionID) throw new Error("Cannot send a prompt to your own session.")
       const session = await requireSession(input.sessionID)
@@ -289,27 +287,31 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
         metadata: promptMetadata(context.sessionID),
       })
       const existing = await state.watch(session.id)
-      await state.addWatch({
-        sessionID: session.id,
-        notify: context.sessionID,
-        since: Date.now(),
-        note: input.note ?? existing?.note,
-        explicit: existing?.explicit,
-      })
+      // Another session's explicit watch stays; this turn still reports here through the prompt metadata.
+      if (!existing?.explicit || existing.notify === context.sessionID) {
+        await state.addWatch({
+          sessionID: session.id,
+          notify: context.sessionID,
+          since: Date.now(),
+          note: input.note ?? existing?.note,
+          explicit: existing?.explicit,
+        })
+      }
       return (
         `Sent to ${link(session)}${describeModel(model)}. ` +
-        "Watching it; a notification will arrive when it finishes or needs the user."
+        "Your session will be notified when this turn finishes or needs the user."
       )
     },
   }
 
   const create: ToolDef = {
-    name: "assistant_new",
+    name: "session_new",
     description:
-      "Start a new session in a directory with an initial prompt, then return immediately. The new session is " +
-      "watched automatically and, unless open is false, opened as a tab in the user's TUI. With focus (default " +
-      "true) that tab becomes the active one; with focus false it is added in the background. The result says " +
-      "whether a TUI confirmed it. Pass model/variant to choose the model; otherwise the project default is used.",
+      "Start a new session in a directory with an initial prompt, then return immediately. Only your session is " +
+      "notified, in a new turn, when its first turn finishes, fails or needs the user. Unless open is false, it " +
+      "opens as a tab in the user's TUI. With focus (default true) that tab becomes the active one; with focus " +
+      "false it is added in the background. The result says whether a TUI confirmed it. " +
+      modelHint(ctx.options),
     input: {
       type: "object",
       properties: {
@@ -339,7 +341,6 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       },
       context,
     ) {
-      await touch(context)
       const model = parseModel(input.model, input.variant)
       const client = await api()
       const session = await client.session.create({
@@ -357,7 +358,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   }
 
   const open: ToolDef = {
-    name: "assistant_open",
+    name: "session_open",
     description:
       "Open an existing session as a tab in the user's TUI, e.g. when the user closed its tab and wants it back. " +
       "With focus (default true) the tab becomes the active one; with focus false it is added in the background. " +
@@ -374,7 +375,6 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { sessionID: string; focus?: boolean }, context) {
-      await touch(context)
       const session = await requireSession(input.sessionID)
       const results = await tabs.open(session.id, input.focus ?? true)
       return `Asked the TUI to open ${link(session)}. ${tabReport(results)}`
@@ -382,7 +382,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   }
 
   const close: ToolDef = {
-    name: "assistant_close",
+    name: "session_close",
     description:
       "Close a session's tab in the user's open TUIs and stop watching it. The session and its history are kept. " +
       "Refuses while the session is running or waiting for a permission or an answer. Only use it after the user " +
@@ -394,7 +394,6 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { sessionID: string }, context) {
-      await touch(context)
       if (input.sessionID === context.sessionID) throw new Error("Cannot close your own session.")
       const session = await requireSession(input.sessionID)
       const client = await api()
@@ -414,11 +413,11 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   }
 
   const watch: ToolDef = {
-    name: "assistant_watch",
+    name: "session_watch",
     description:
-      "Watch a session without sending it anything: you will be notified when any turn finishes (including turns " +
-      "the user starts in its tab), fails or needs the user. Use it only when the user asks to follow a session. " +
-      "Sessions that need permission or answers always notify, even unwatched.",
+      "Watch a session without sending it anything: your session is notified when any turn finishes (including " +
+      "turns the user starts in its tab), fails or needs the user. Use it only when the user asks to follow a " +
+      "session. A session has one watcher; watching it here replaces the previous one.",
     input: {
       type: "object",
       properties: { sessionID: { type: "string" }, note: { type: "string" } },
@@ -426,7 +425,6 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { sessionID: string; note?: string }, context) {
-      await touch(context)
       const session = await requireSession(input.sessionID)
       await state.addWatch({
         sessionID: session.id,
@@ -440,7 +438,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   }
 
   const unwatch: ToolDef = {
-    name: "assistant_unwatch",
+    name: "session_unwatch",
     description: "Stop watching a session.",
     input: {
       type: "object",
@@ -449,7 +447,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { sessionID: string }, context) {
-      await touch(context)
+      const existing = await state.watch(input.sessionID)
+      if (!existing || existing.notify !== context.sessionID) return `You are not watching ${input.sessionID}.`
       await state.removeWatch(input.sessionID)
       return `Stopped watching ${input.sessionID}.`
     },
@@ -465,9 +464,13 @@ export async function registerTools(ctx: Context, tools: ToolDef[]) {
         name: tool.name,
         description: tool.description,
         input: tool.input,
-        execute: async (input: unknown, context: ToolContext) => ({
-          content: await tool.execute(input ?? {}, context),
-        }),
+        execute: async (input: unknown, context: ToolContext) => {
+          // Subagent sessions are not tabs; reports sent to them would never reach the user.
+          if ((await getSession(context.sessionID))?.parentID) {
+            throw new Error(`${tool.name} only works in top-level sessions, not in subagents.`)
+          }
+          return { content: await tool.execute(input ?? {}, context) }
+        },
       } as never)
     }
   })

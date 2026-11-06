@@ -1,8 +1,8 @@
 # opencode-assistant
 
-A personal assistant session for [OpenCode](https://opencode.ai) V2. Keep one tab open in this directory, and the
-`assistant` agent keeps track of all your other sessions: it tells you how a topic is going, hands work to other
-sessions, and tells you when they finish or need you.
+Lets any [OpenCode](https://opencode.ai) V2 session hand work to other sessions and hear back. Every top-level
+session gets tools to list, search, read, start, prompt, open and close other sessions. When a session finishes work
+you handed it, only your session is notified, so you can run one coordinating session per repository, or none.
 
 > Supports OpenCode V2 only (built against `@opencode/plugin` 2.0.26). V1 is not supported.
 
@@ -10,22 +10,22 @@ sessions, and tells you when they finish or need you.
   <img src="docs/demo.gif" alt="Asking for a status, starting a session in a new tab, a clickable notification when it finishes, and closing the tab" width="1000">
 </p>
 
-The demo shows, in order: a status question answered from notes and two sessions, a new session started in another
-repository that opens as a tab right away, a clickable notification when that session finishes, and closing its tab.
+The demo was recorded with the earlier dedicated Assistant agent. The flow is the same in any session now: a
+status question answered from two sessions, a new session started in another repository that opens as a tab right
+away, a clickable notification when that session finishes, and closing its tab.
 
 ## What it does
 
-- **Answers "how are we doing with X?"** from your notes in `memory/` and from the recent conversations of your other
-  sessions.
-- **Hands work out.** It sends a prompt to an existing session or starts a new one, then returns at once. It never
-  waits or polls.
-- **Notifies you** in its tab when a watched session finishes or fails, or when any session waits for a permission or
-  an answer. Each notification is a row you can click to open that session.
-- **Manages tabs.** New sessions open as tabs, it reopens the tab of an existing session on request, and it closes
+- **Answers "how are we doing with X?"** from the recent conversations of your other sessions.
+- **Hands work out.** A session sends a prompt to an existing session or starts a new one, then returns at once. It
+  never waits or polls.
+- **Reports back to the sender only.** If session X hands work to session Y, reports from Y go to X and nowhere else.
+  Each report is a row you can click to open Y, and it starts a new turn in X so X can continue.
+- **Manages tabs.** New sessions open as tabs, the tools reopen the tab of an existing session on request, and close
   a tab once you say the thread is done.
-- **Links sessions.** Session IDs in its replies render as clickable links.
+- **Links sessions.** Session IDs in fenced ```` ```session ```` blocks render as clickable links.
 
-The assistant does not write code itself, and it never answers permissions or questions on your behalf.
+The tools never answer permissions or questions on your behalf.
 
 ## Requirements
 
@@ -40,8 +40,8 @@ opencode plugin add github:igorovh/opencode-assistant
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. One entry loads both
-parts: the server part (the `assistant` agent, its tools and the notifications) and the TUI part (tabs, session
-links and `/go`). Restart OpenCode afterwards.
+parts: the server part (the tools and the reports) and the TUI part (tabs, session links and `/go`). Restart
+OpenCode afterwards.
 
 You can also add the entry to the config yourself:
 
@@ -61,21 +61,8 @@ opencode plugin remove github:igorovh/opencode-assistant
 
 ## Getting started
 
-1. Pick a directory to be the assistant's home, for example `~/assistant`. Its notes go to `memory/` there. Set it
-   as the `home` option (see [Options](#options)) so the agent shows up only there.
-2. Start OpenCode in that directory and switch to the **Assistant** agent (`shift+tab` cycles agents).
-3. Keep this tab open. Ask it things like "how are we doing with the checkout launch?" or "start a session in
-   ~/code/app that fixes the flaky login test".
-
-To open the home directory with the assistant already selected, add an `opencode.jsonc` there:
-
-```jsonc
-{ "default_agent": "assistant" }
-```
-
-`memory/` holds plain Markdown notes: `memory/index.md` lists topics, and `memory/topics/<topic>.md` holds one
-topic each. The assistant reads them freely but writes only when you ask it to. If the home directory is a git
-repository, add `memory/` to its `.gitignore` to keep notes private.
+Ask any session things like "how are we doing with the checkout launch?" or "start a session in ~/code/app that
+fixes the flaky login test". When that session finishes, the session you asked gets the report.
 
 ## Options
 
@@ -84,76 +71,71 @@ repository, add `memory/` to its `.gitignore` to keep notes private.
   "plugins": [
     {
       "package": "github:igorovh/opencode-assistant",
-      "options": { "home": "~/assistant", "model": "anthropic/claude-opus-5-5", "variant": "medium" }
+      "options": { "model": "anthropic/claude-opus-5-5", "variant": "medium" }
     }
   ]
 }
 ```
 
-- `model`: the model the assistant suggests for new sessions, as `"providerID/modelID"`. Without it, the assistant
-  asks and otherwise uses your default model.
-- `variant`: the model variant to suggest with `model`.
-- `home`: the assistant's home directory. When set, the **Assistant** agent appears only there and in its
-  subdirectories, instead of in every directory. Tools and notifications work the same either way.
+- `model`: the model `session_new` uses unless you name another, as `"providerID/modelID"`. Without it, new
+  sessions use your default model.
+- `variant`: the model variant to use with `model`.
 
 ## Tools
 
+The tools work only in top-level sessions (tabs). Subagents get an error, because reports sent to them would never
+reach you.
+
 | Tool | What it does |
 |---|---|
-| `assistant_sessions` | Lists sessions across all projects with status: running, idle, or waiting for a permission or an answer. |
-| `assistant_search` | Searches titles, prompts and replies of recent sessions for a topic. |
-| `assistant_read` | Reads the recent conversation of one session. |
-| `assistant_send` | Sends a prompt to a session and returns at once. You are notified when that turn ends. |
-| `assistant_new` | Starts a new session in a directory with a prompt and opens it as a tab. You are notified when its first turn ends. |
-| `assistant_open` | Opens an existing session as a tab, or activates its tab if it is already open. Does not change watching. |
-| `assistant_close` | Closes a session's tab in every open TUI and stops watching it. The session and its history stay. |
-| `assistant_watch` / `assistant_unwatch` | Starts or stops watching every turn of a session, without sending it anything. |
+| `session_list` | Lists sessions across all projects with status: running, idle, or waiting for a permission or an answer. Marks sessions you handed work to or watch. |
+| `session_search` | Searches titles, prompts and replies of recent sessions for a topic. |
+| `session_read` | Reads the recent conversation of one session. |
+| `session_send` | Sends a prompt to a session and returns at once. Your session is notified when that turn ends. |
+| `session_new` | Starts a new session in a directory with a prompt and opens it as a tab. Your session is notified when its first turn ends. |
+| `session_open` | Opens an existing session as a tab, or activates its tab if it is already open. Does not change watching. |
+| `session_close` | Closes a session's tab in every open TUI and stops watching it. The session and its history stay. |
+| `session_watch` / `session_unwatch` | Starts or stops watching every turn of a session, without sending it anything. |
 
 Details:
 
-- `assistant_new` switches to the new tab by default. Pass `focus: false` to add the tab in the background, or
+- `session_new` switches to the new tab by default. Pass `focus: false` to add the tab in the background, or
   `open: false` to skip the tab. The result says what the TUI did (for example `TUI: opened and focused.`), or that no TUI
   confirmed it. Each TUI also shows a short toast when it opens a tab.
-- `assistant_new` and `assistant_send` accept an optional `model` (`"providerID/modelID"`) and `variant` (for example
-  `"medium"`; requires `model`). `assistant_new` creates the session on that model. `assistant_send` switches the
+- `session_new` and `session_send` accept an optional `model` (`"providerID/modelID"`) and `variant` (for example
+  `"medium"`; requires `model`). `session_new` creates the session on that model. `session_send` switches the
   session's model before sending, and the switch stays for later turns. Without `model`, the default model is used.
-- `assistant_open` switches to the tab by default; pass `focus: false` to add it in the background. Its result
+- `session_open` switches to the tab by default; pass `focus: false` to add it in the background. Its result
   reports `opened and focused`, `opened in background`, `already open`, `already open, focused` or
   `already open and active`, or that no TUI confirmed it.
-- `assistant_close` refuses while the session is running or waiting for a permission or an answer.
+- `session_close` refuses while the session is running or waiting for a permission or an answer.
+- A session has one explicit watcher. `session_watch` from another session replaces it, and `session_unwatch` only
+  removes your own watch.
 
-## Notifications
+## Reports
 
-What triggers a notification:
+Where a report goes:
 
-- **Every session:** waiting for a permission or an answer, and failures. These always notify, so the assistant can
-  remind you, even when you started the turn yourself.
-- **Sessions the assistant gave work to** (`assistant_send`, `assistant_new`): also finished and interrupted, but
-  only for the turn the assistant started. Turns you start yourself in that tab do not notify the assistant.
-- **Sessions you asked it to watch** (`assistant_watch`): finished and interrupted for every turn, including yours.
+- **A turn another session started** (`session_send`, `session_new`): finished, failed, interrupted, and waiting for
+  a permission or an answer all go to that session only. Each prompt carries `metadata.assistant.from` with the
+  sender's ID, and the plugin reads it from the turn that produced the event.
+- **Any other turn of a session you watch** (`session_watch`): the same events go to the watching session.
+- **Everything else:** nowhere. Turns you start yourself in a tab notify no one, unless another session watches it.
 
-How it tells the turns apart: the assistant sends its prompts with `metadata.assistant` on the user message. When a
-turn ends, the plugin reads the session's messages since the previous `idle` message and reports the turn only if
-one of them carries that mark. Limitations:
+A turn is everything after the session's previous `idle` message. Limitations:
 
-- If you type in a tab while the assistant's prompt waits in the same turn, the whole turn counts as the assistant's
-  and notifies.
-- Only the last 50 messages are checked, so a very long turn whose prompt is older than that does not notify.
-- Watches created before this change count as "work from the assistant", not as `assistant_watch`. Ask the assistant
-  to watch them again if you want every turn.
+- If you type in a tab while another session's prompt waits in the same turn, the whole turn counts as that
+  session's and reports to it.
+- The plugin pages back through the turn up to 5000 messages, so only a turn longer than that does not report.
 
-Notifications go to the assistant session that last used a tool. Each one starts an assistant turn:
+How reports arrive:
 
-- It is a `session.synthetic` message, so it wakes the assistant and stays in the chat as a clickable row.
-  It uses `delivery: "queue"`, so it never interrupts a running turn.
-- Events that arrive within 2 s go into one message. While the assistant is working, events keep collecting and are
-  sent as one message when it is idle. Repeated identical events are dropped.
-- The assistant decides whether to answer. If not, it replies exactly `NO_REPLY`, and the plugin removes that turn
-  with `session.revert.stage({ files: false })` and `session.revert.commit`. Files are not touched, and the
-  notification itself stays. The plugin skips this cleanup if anything else happened after the notification or if
-  input is queued, because a revert would delete it.
+- Each one is a `session.synthetic` message in the receiving session. It wakes that session's agent and stays in the
+  chat as a clickable row. It uses `delivery: "queue"`, so it never interrupts a running turn.
+- Events that arrive within 2 s go into one message. While the receiving session is working, events keep collecting
+  and are sent as one message when it is idle. Repeated identical events are dropped.
 
-Run `/go` (alias `/inbox`) in any TUI to pick a session from the recent notifications.
+Run `/go` (alias `/inbox`) in a session to pick one of the sessions that reported back to it.
 
 ## How tabs work
 
@@ -169,9 +151,7 @@ a collapsed group stays hidden until you open the group.
 - A TUI that is not running when a tab event is sent misses it. The tool result then says no TUI confirmed it.
 - Tabs, session links and `/go` need the plugin in the global config. A plugin added only to a project's
   `opencode.jsonc` is not loaded by TUIs started in other directories.
-- `assistant_search` scans only recent sessions (40 by default, 150 at most) and their recent messages.
-- Notifications go to one assistant session: the one that last used a tool. Sessions that use the `assistant` agent
-  never notify.
+- `session_search` scans only recent sessions (40 by default, 150 at most) and their recent messages.
 - The plugin talks to the local OpenCode service through its HTTP API, so the service must be running (it is
   whenever the TUI is).
 
@@ -194,8 +174,6 @@ OpenCode reloads the plugin whenever a file changes.
   "plugins": ["/path/to/opencode-assistant"]
 }
 ```
-
-The agent's instructions are in `src/agent.md`.
 
 ## License
 

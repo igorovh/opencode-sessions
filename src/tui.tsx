@@ -8,7 +8,6 @@ import { AssistantRpc } from "./rpc.ts"
 type TuiContext = Plugin.Context
 
 const SESSION_ID = /ses_[A-Za-z0-9]+/g
-const ASSISTANT_AGENT = "assistant"
 
 function eventSessionID(data: unknown): string | undefined {
   const value = (data as { sessionID?: unknown } | undefined)?.sessionID
@@ -55,19 +54,14 @@ function sessionLink(context: TuiContext, sessionID: string): TextRenderable {
   return text
 }
 
-async function findAssistant(context: TuiContext): Promise<SessionInfo | undefined> {
-  const response = await context.client.session.list({ limit: 100, order: "desc", parentID: null })
-  return response.data.find((session) => session.agent === ASSISTANT_AGENT)
-}
-
 async function showInbox(context: TuiContext) {
-  const assistant = await findAssistant(context)
-  if (!assistant) {
-    context.ui.toast.show({ title: "Assistant", message: "No assistant session found yet.", variant: "warning" })
+  const route = context.ui.router.current()
+  if (route.type !== "session") {
+    context.ui.toast.show({ title: "Assistant", message: "Open a session first.", variant: "warning" })
     return
   }
   const response = await context.client.message.list({
-    sessionID: assistant.id,
+    sessionID: route.sessionID,
     type: "synthetic",
     limit: 50,
     order: "desc",
@@ -88,10 +82,11 @@ async function showInbox(context: TuiContext) {
     const name = typeof metadata.agent === "string" ? metadata.agent : childID
     return [{ title: `${name} · ${metadata.assistant}`, value: childID, description: message.description, category }]
   })
-  const selected = await context.ui.dialog.select({
-    title: "Assistant notifications",
-    options: [{ title: "Open assistant", value: assistant.id, category: "Assistant" }, ...options.slice(0, 30)],
-  })
+  if (options.length === 0) {
+    context.ui.toast.show({ title: "Assistant", message: "No session reports in this session yet.", variant: "info" })
+    return
+  }
+  const selected = await context.ui.dialog.select({ title: "Session reports", options: options.slice(0, 30) })
   if (selected) openSession(context, selected)
 }
 
@@ -101,8 +96,8 @@ function Commands(props: { context: TuiContext }) {
     commands: [
       {
         id: "assistant.inbox",
-        title: "Assistant notifications",
-        description: "Jump to a session the assistant notified you about",
+        title: "Session reports",
+        description: "Jump to a session that reported back to the current session",
         group: "Assistant",
         palette: true,
         slash: { name: "go", aliases: ["inbox"] },
@@ -120,7 +115,7 @@ function Commands(props: { context: TuiContext }) {
 export default Plugin.define({
   id: "assistant",
   setup(context) {
-    // ```session blocks in assistant replies become clickable links to those sessions.
+    // ```session blocks in replies become clickable links to those sessions.
     const unregister = context.markdown.registerCodeBlockRenderer("session", (token) => {
       const ids = [...new Set(token.text.match(SESSION_ID) ?? [])]
       if (ids.length === 0) return undefined

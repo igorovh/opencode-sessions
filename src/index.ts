@@ -1,5 +1,4 @@
 import { Plugin } from "@opencode/plugin"
-import { registerAgent } from "./agent.ts"
 import { AssistantRpc, type Ack } from "./rpc.ts"
 import { createState } from "./state.ts"
 import { buildTools, registerTools } from "./tools.ts"
@@ -45,13 +44,11 @@ export default Plugin.define({
         request((requestID) => rpc.events.emit("tab.open", { requestID, sessionID, focus })),
       close: (sessionID: string) => request((requestID) => rpc.events.emit("tab.close", { requestID, sessionID })),
     }
-    const agent = await registerAgent(ctx)
     const tools = await registerTools(ctx, buildTools(ctx, state, tabs))
     const stop = startWatcher(ctx, state)
     return async () => {
       stop()
       await tools.dispose()
-      await agent?.dispose()
       await rpc.dispose()
     }
   },

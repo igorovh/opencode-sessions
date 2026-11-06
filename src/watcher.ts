@@ -1,13 +1,11 @@
 import type { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client"
 import { createNotifier, type Kind } from "./notifier.ts"
-import { getSession, messages, promptedByAssistant, rootSession } from "./sessions.ts"
+import { messages, promptedBy, rootSession } from "./sessions.ts"
 import type { State } from "./state.ts"
 import { messageText, truncate } from "./text.ts"
 
 type Context = Plugin.Context
-
-const ASSISTANT_AGENT = "assistant"
 
 // Plugin reloads can leave an old instance subscribed; only the newest one may notify, and dedupe is shared.
 const registry: { generation: number; seen: Set<string> } = ((globalThis as any).__opencodeAssistantWatcher ??= {
@@ -29,11 +27,16 @@ export function startWatcher(ctx: Context, state: State): () => void {
     return true
   }
 
+  // Only the session that sent the current turn, or else its explicit watcher, hears back. Nobody else does.
+  async function target(sessionID: string): Promise<string | undefined> {
+    const watch = await state.watch(sessionID)
+    const notify = (await promptedBy(sessionID)) ?? (watch?.explicit ? watch.notify : undefined)
+    return notify && notify !== sessionID ? notify : undefined
+  }
+
   async function notify(session: SessionInfo, kind: Kind, detail: string, body: string) {
-    const watch = await state.watch(session.id)
-    const target = watch?.notify ?? (await state.home())
-    if (!target || target === session.id) return
-    notifier.add(target, { session, kind, detail, body })
+    const to = await target(session.id)
+    if (to) notifier.add(to, { session, kind, detail, body })
   }
 
   async function lastReply(sessionID: string): Promise<string> {
@@ -42,47 +45,27 @@ export function startWatcher(ctx: Context, state: State): () => void {
     return reply ? messageText(reply)! : ""
   }
 
-  async function relevant(sessionID: string) {
-    const session = await rootSession(sessionID)
-    if (!session || session.agent === ASSISTANT_AGENT) return
-    const home = await state.home()
-    if (session.id === home) return
-    return session
-  }
-
-  // Finished and interrupted turns notify only when the user asked to watch, or the assistant prompted the turn.
-  async function reportTurn(sessionID: string): Promise<boolean> {
-    const watch = await state.watch(sessionID)
-    if (!watch) return false
-    return watch.explicit === true || (await promptedByAssistant(sessionID))
-  }
-
-  async function isAssistant(sessionID: string) {
-    if (sessionID === (await state.home())) return true
-    return (await getSession(sessionID))?.agent === ASSISTANT_AGENT
-  }
-
   async function handle(event: OpenCodeEvent) {
     switch (event.type) {
       case "permission.asked": {
         if (!once(`permission:${event.data.id}`)) return
-        const session = await relevant(event.data.sessionID)
+        const session = await rootSession(event.data.sessionID)
         if (!session) return
         const what = `${event.data.action} ${event.data.resources.join(", ")}`.trim()
-        await notify(session, "permission", what, `Waiting for permission: ${what}`)
+        await notify(session, "permission", what, `Waiting for the user's permission: ${what}`)
         return
       }
       case "form.created": {
         const form = event.data.form
         if (!once(`form:${form.id}`)) return
-        const session = await relevant(form.sessionID)
+        const session = await rootSession(form.sessionID)
         if (!session) return
         await notify(session, "question", form.title, `Waiting for the user to answer: ${form.title}`)
         return
       }
       case "session.execution.failed": {
         if (!once(event.id)) return
-        const session = await relevant(event.data.sessionID)
+        const session = await rootSession(event.data.sessionID)
         if (!session || session.id !== event.data.sessionID) return
         const error = event.data.error.message
         await notify(session, "failed", error, `Execution failed: ${error}`)
@@ -90,12 +73,7 @@ export function startWatcher(ctx: Context, state: State): () => void {
       }
       case "session.execution.succeeded": {
         if (!once(event.id)) return
-        if (await isAssistant(event.data.sessionID)) {
-          await notifier.hideSilentTurn(event.data.sessionID)
-          return
-        }
-        if (!(await reportTurn(event.data.sessionID))) return
-        const session = await relevant(event.data.sessionID)
+        const session = await rootSession(event.data.sessionID)
         if (!session || session.id !== event.data.sessionID) return
         const reply = await lastReply(session.id)
         await notify(session, "finished", reply || "finished", truncate(reply || "(no text reply)", 4000))
@@ -104,9 +82,8 @@ export function startWatcher(ctx: Context, state: State): () => void {
       case "session.execution.interrupted": {
         if (!once(event.id)) return
         if (event.data.reason === "user" || event.data.reason === "superseded") return
-        if (!(await reportTurn(event.data.sessionID))) return
-        const session = await relevant(event.data.sessionID)
-        if (!session) return
+        const session = await rootSession(event.data.sessionID)
+        if (!session || session.id !== event.data.sessionID) return
         await notify(session, "interrupted", event.data.reason, `Execution interrupted: ${event.data.reason}`)
         return
       }

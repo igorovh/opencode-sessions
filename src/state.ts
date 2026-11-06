@@ -4,31 +4,25 @@ type Storage = Plugin.Context["storage"]
 
 export interface Watch {
   readonly sessionID: string
-  /** Assistant session that receives notifications for this watch. */
+  /** Session that receives notifications for this watch: the one that handed out the work or asked to watch. */
   readonly notify: string
   readonly since: number
   readonly note?: string
-  /** Set by assistant_watch: every turn notifies. Otherwise only turns the assistant prompted do. */
+  /** Set by session_watch: every turn notifies. Otherwise only turns the notify session prompted do. */
   readonly explicit?: boolean
 }
 
-/** Metadata key on user messages the assistant sends, used to tell its turns from the user's own. */
+/** Metadata key on user messages the tools send, used to tell those turns from the user's own and route replies. */
 export const PROMPT_METADATA_KEY = "assistant"
 
 export function promptMetadata(from: string) {
   return { [PROMPT_METADATA_KEY]: { from } }
 }
 
-const HOME = "assistant-home"
 const WATCH = "watch/"
 
 export function createState(storage: Storage) {
   return {
-    async home(): Promise<string | undefined> {
-      const value = await storage.get(HOME)
-      return typeof value === "string" ? value : undefined
-    },
-    setHome: (sessionID: string) => storage.set(HOME, sessionID),
     async watch(sessionID: string): Promise<Watch | undefined> {
       const value = await storage.get(WATCH + sessionID)
       return value && typeof value === "object" ? (value as unknown as Watch) : undefined

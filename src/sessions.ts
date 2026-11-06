@@ -2,6 +2,9 @@ import type { OpenCodeClient, SessionInfo, SessionMessageInfo } from "@opencode/
 import { api } from "./api.ts"
 import { PROMPT_METADATA_KEY } from "./state.ts"
 
+const TURN_PAGE_SIZE = 200
+const TURN_PAGES = 25
+
 export interface Attention {
   readonly permissions: { action: string; resources: string[]; message?: string }[]
   readonly forms: { title: string }[]
@@ -57,19 +60,33 @@ export async function attention(client: OpenCodeClient, sessionID: string): Prom
 }
 
 /**
- * Whether the latest turn of a session includes a prompt the assistant sent. A turn is everything after the
+ * The session that sent the latest tool prompt in the current turn, if any. A turn is everything after the
  * previous `idle` message; the current turn's own `idle` may or may not be written yet.
  */
-export async function promptedByAssistant(sessionID: string): Promise<boolean> {
-  const history = await messages(sessionID, 50).catch(() => [])
-  let index = history.length - 1
-  while (index >= 0 && history[index]!.type === "idle") index--
-  for (; index >= 0 && history[index]!.type !== "idle"; index--) {
-    const message = history[index]!
-    const metadata = (message as { metadata?: Record<string, unknown> }).metadata
-    if (message.type === "user" && metadata?.[PROMPT_METADATA_KEY]) return true
+export async function promptedBy(sessionID: string): Promise<string | undefined> {
+  const client = await api()
+  let started = false
+  let cursor: string | undefined
+  // Long agentic turns hold hundreds of messages, so page back to the turn boundary instead of a fixed window.
+  for (let page = 0; page < TURN_PAGES; page++) {
+    const response = await client.message
+      .list(cursor ? { sessionID, limit: TURN_PAGE_SIZE, cursor } : { sessionID, limit: TURN_PAGE_SIZE, order: "desc" })
+      .catch(() => undefined)
+    if (!response) return undefined
+    for (const message of response.data) {
+      if (message.type === "idle") {
+        if (started) return undefined
+        continue
+      }
+      started = true
+      const metadata = (message as { metadata?: Record<string, unknown> }).metadata
+      const from = (metadata?.[PROMPT_METADATA_KEY] as { from?: unknown } | undefined)?.from
+      if (message.type === "user" && typeof from === "string") return from
+    }
+    cursor = response.cursor.next ?? undefined
+    if (!cursor || response.data.length < TURN_PAGE_SIZE) return undefined
   }
-  return false
+  return undefined
 }
 
 export async function messages(sessionID: string, limit: number): Promise<SessionMessageInfo[]> {
