@@ -36,7 +36,7 @@ Install the plugin from GitHub with the OpenCode CLI. Pin a release tag: it keep
 OpenCode check for updates.
 
 ```sh
-opencode plugin add github:igorovh/opencode-sessions#v0.3.0
+opencode plugin add github:igorovh/opencode-sessions#v0.3.1
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. One entry loads both
@@ -48,7 +48,7 @@ You can also add the entry to the config yourself:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:igorovh/opencode-sessions#v0.3.0"]
+  "plugins": ["github:igorovh/opencode-sessions#v0.3.1"]
 }
 ```
 
@@ -72,7 +72,7 @@ fixes the flaky login test". When that session finishes, the session you asked g
 {
   "plugins": [
     {
-      "package": "github:igorovh/opencode-sessions#v0.3.0",
+      "package": "github:igorovh/opencode-sessions#v0.3.1",
       "options": { "scope": "project" }
     }
   ]
@@ -172,6 +172,11 @@ bun install
 bun run typecheck
 bun test
 ```
+
+The TUI part ships precompiled in `dist/tui.js`, because OpenCode does not run the Solid transform for plugins
+installed from GitHub. After changing `src/tui.tsx` or anything it imports, run `bun run compile` and commit
+`dist/`; CI fails when it is out of date. `bun run check:dist` checks that both parts import only modules that
+OpenCode or the plugin's dependencies provide.
 
 To run your checkout instead of the published plugin, put its path in `plugins` and restart OpenCode. After that,
 OpenCode reloads the plugin whenever a file changes.
