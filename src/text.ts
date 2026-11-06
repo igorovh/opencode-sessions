@@ -42,5 +42,16 @@ export function ago(time: number, now = Date.now()): string {
 }
 
 export function escapeAttr(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")
+  return escapeText(value).replace(/"/g, "&quot;")
+}
+
+/** Keeps another session's text from closing or forging the surrounding XML tags. */
+export function escapeText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+/** Clamps an optional numeric tool input to an integer in [min, max]. */
+export function clamp(value: number | undefined, fallback: number, min: number, max: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, Math.trunc(value)))
 }

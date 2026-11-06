@@ -1,12 +1,21 @@
 import type { Plugin } from "@opencode/plugin"
 import type { SessionInfo } from "@opencode/client"
+import { stat } from "node:fs/promises"
+import path from "node:path"
 import { api } from "./api.ts"
 import { attention, getSession, listSessions, messages, running } from "./sessions.ts"
 import { promptMetadata, type State } from "./state.ts"
-import { ago, messageText, oneLine, title, toolNames, truncate } from "./text.ts"
+import { ago, clamp, messageText, oneLine, title, toolNames, truncate } from "./text.ts"
 
 type Context = Plugin.Context
-type ToolContext = { readonly sessionID: string; readonly agent: string }
+type ToolContext = {
+  readonly sessionID: string
+  readonly agent: string
+  readonly messageID: string
+  readonly id: string
+}
+
+const SEARCH_CONCURRENCY = 8
 
 interface ToolDef {
   name: string
@@ -38,7 +47,7 @@ const MODEL_PROPERTIES = {
   },
 }
 
-function parseModel(model: string | undefined, variant: string | undefined): ModelChoice | undefined {
+export function parseModel(model: string | undefined, variant: string | undefined): ModelChoice | undefined {
   const trimmedVariant = variant?.trim() || undefined
   if (model === undefined) {
     if (trimmedVariant) throw new Error(`variant "${trimmedVariant}" needs a model, e.g. "anthropic/claude-opus-5-5".`)
@@ -66,12 +75,6 @@ function describeModel(model: ModelChoice | undefined): string {
   return ` on ${model.providerID}/${model.id}${model.variant ? ` (${model.variant})` : ""}`
 }
 
-async function requireSession(sessionID: string): Promise<SessionInfo> {
-  const session = await getSession(sessionID)
-  if (!session) throw new Error(`Session not found: ${sessionID}. Find the right ID with session_list or session_search.`)
-  return session
-}
-
 /** Tab requests resolve to what the connected TUIs reported doing; empty when none answered in time. */
 export interface Tabs {
   open(sessionID: string, focus: boolean): Promise<string[]>
@@ -79,18 +82,77 @@ export interface Tabs {
 }
 
 const NO_TUI =
-  "No TUI confirmed it. The opencode-assistant plugin is probably not loaded in the TUI: install it globally with " +
-  '"opencode plugin add github:igorovh/opencode-assistant" and restart the TUI.'
+  "No TUI confirmed it. The opencode-sessions plugin is probably not loaded in the TUI: add it to the global " +
+  "config (opencode plugin add github:igorovh/opencode-sessions) and restart the TUI."
 
 function tabReport(results: string[]): string {
   return results.length > 0 ? `TUI: ${results.join(", ")}.` : NO_TUI
 }
 
+export type Scope = "all" | "project"
+
+export function parseScope(value: unknown): Scope {
+  return value === "project" ? "project" : "all"
+}
+
+async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await fn(items[index]!)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
+async function requireDirectory(directory: string): Promise<string> {
+  if (!path.isAbsolute(directory)) throw new Error(`Directory must be an absolute path: ${directory}`)
+  const resolved = path.resolve(directory)
+  const info = await stat(resolved).catch(() => undefined)
+  if (!info?.isDirectory()) throw new Error(`Directory does not exist: ${resolved}`)
+  return resolved
+}
+
 export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
+  const scope = parseScope(ctx.options.scope)
+
+  // With scope "project", callers only see sessions of their own project.
+  async function visible(context: ToolContext): Promise<(session: SessionInfo) => boolean> {
+    if (scope === "all") return () => true
+    const caller = await getSession(context.sessionID)
+    if (!caller) throw new Error(`Session not found: ${context.sessionID}.`)
+    return (session) => session.projectID === caller.projectID
+  }
+
+  async function requireSession(sessionID: string, context: ToolContext): Promise<SessionInfo> {
+    const session = await getSession(sessionID)
+    if (!session || !(await visible(context))(session)) {
+      throw new Error(`Session not found: ${sessionID}. Find the right ID with session_list or session_search.`)
+    }
+    return session
+  }
+
+  // Another session's agent may edit files in its directory, so starting work there needs the caller's edit
+  // permission. This keeps read-only agents such as plan from editing through another session.
+  async function assertDrive(context: ToolContext, directory: string, metadata: Record<string, unknown>) {
+    await ctx.permission.assert({
+      sessionID: context.sessionID,
+      agent: context.agent,
+      action: "edit",
+      resources: [`${directory.replaceAll("\\", "/").replace(/\/$/, "")}/*`],
+      save: ["*"],
+      metadata,
+      source: { type: "tool", messageID: context.messageID, id: context.id },
+    } as Parameters<Context["permission"]["assert"]>[0])
+  }
+
   const sessions: ToolDef = {
     name: "session_list",
     description:
-      "List the user's OpenCode sessions (tabs) across all projects, newest activity first. Shows title, ID, " +
+      "List the user's OpenCode sessions (tabs), newest activity first. Shows title, ID, " +
       "directory, whether it is running, idle or waiting for the user (permission/question), and whether you watch it. " +
       LINK_HINT,
     input: {
@@ -105,15 +167,17 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     },
     async execute(input: { search?: string; directory?: string; limit?: number; watchedOnly?: boolean }, context) {
       const client = await api()
-      const [list, active, watches] = await Promise.all([
-        listSessions({ limit: input.limit ?? 30, search: input.search, directory: input.directory }),
+      const [list, active, watches, inScope] = await Promise.all([
+        listSessions({ limit: clamp(input.limit, 30, 1, 200), search: input.search, directory: input.directory }),
         running(),
         state.watches(),
+        visible(context),
       ])
       const own = watches.filter((watch) => watch.notify === context.sessionID)
       const watched = new Map(own.map((watch) => [watch.sessionID, watch]))
       const filtered = list.filter(
-        (session) => session.id !== context.sessionID && (!input.watchedOnly || watched.has(session.id)),
+        (session) =>
+          session.id !== context.sessionID && inScope(session) && (!input.watchedOnly || watched.has(session.id)),
       )
       if (filtered.length === 0) return "No matching sessions."
       const lines = await Promise.all(
@@ -157,13 +221,13 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     },
     async execute(input: { sessionID: string; limit?: number; maxChars?: number }, context) {
       const client = await api()
-      const session = await requireSession(input.sessionID)
+      const session = await requireSession(input.sessionID, context)
       const [history, active, waiting] = await Promise.all([
-        messages(session.id, Math.min(input.limit ?? 20, 200)),
+        messages(session.id, clamp(input.limit, 20, 1, 200)),
         running(),
         attention(client, session.id),
       ])
-      const max = input.maxChars ?? 1500
+      const max = clamp(input.maxChars, 1500, 100, 20000)
       const header = [
         `Session ${link(session)}`,
         `status: ${active.has(session.id) ? "running" : "idle"}` +
@@ -195,7 +259,10 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       properties: {
         query: { type: "string", description: "Words to look for; every word must appear in a message." },
         sessions: { type: "number", description: "How many recent sessions to scan (default 40, max 150)." },
-        messagesPerSession: { type: "number", description: "Recent messages scanned per session (default 150)." },
+        messagesPerSession: {
+          type: "number",
+          description: "Recent messages scanned per session (default 150, max 500).",
+        },
       },
       required: ["query"],
       additionalProperties: false,
@@ -207,24 +274,25 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
         const lower = text.toLowerCase()
         return words.every((word) => lower.includes(word))
       }
-      const list = (await listSessions({ limit: Math.min(input.sessions ?? 40, 150) })).filter(
-        (session) => session.id !== context.sessionID,
-      )
-      const results = await Promise.all(
-        list.map(async (session) => {
-          const snippets: string[] = []
-          if (matches(title(session))) snippets.push(`title: ${title(session)}`)
-          const history = await messages(session.id, input.messagesPerSession ?? 150).catch(() => [])
-          for (const message of history) {
-            const text = messageText(message)
-            if (!text || !matches(text)) continue
-            const lower = text.toLowerCase()
-            const at = Math.max(0, lower.indexOf(words[0]!) - 80)
-            snippets.push(`${message.type}: …${oneLine(text.slice(at, at + 300), 240)}`)
-          }
-          return { session, snippets }
-        }),
-      )
+      const perSession = clamp(input.messagesPerSession, 150, 1, 500)
+      const [all, inScope] = await Promise.all([
+        listSessions({ limit: clamp(input.sessions, 40, 1, 150) }),
+        visible(context),
+      ])
+      const list = all.filter((session) => session.id !== context.sessionID && inScope(session))
+      const results = await mapLimit(list, SEARCH_CONCURRENCY, async (session) => {
+        const snippets: string[] = []
+        if (matches(title(session))) snippets.push(`title: ${title(session)}`)
+        const history = await messages(session.id, perSession).catch(() => [])
+        for (const message of history) {
+          const text = messageText(message)
+          if (!text || !matches(text)) continue
+          const lower = text.toLowerCase()
+          const at = Math.max(0, lower.indexOf(words[0]!) - 80)
+          snippets.push(`${message.type}: …${oneLine(text.slice(at, at + 300), 240)}`)
+        }
+        return { session, snippets }
+      })
       const hits = results.filter((result) => result.snippets.length > 0)
       if (hits.length === 0) return `No matches for "${input.query}" in the ${list.length} most recent sessions.`
       return hits
@@ -278,7 +346,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     ) {
       const model = parseModel(input.model, input.variant)
       if (input.sessionID === context.sessionID) throw new Error("Cannot send a prompt to your own session.")
-      const session = await requireSession(input.sessionID)
+      const session = await requireSession(input.sessionID, context)
+      await assertDrive(context, session.location.directory, { tool: "session_send", sessionID: session.id })
       if (model) await ctx.session.switchModel({ sessionID: session.id, model })
       await ctx.session.prompt({
         sessionID: session.id,
@@ -342,9 +411,11 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       context,
     ) {
       const model = parseModel(input.model, input.variant)
+      const directory = await requireDirectory(input.directory)
+      await assertDrive(context, directory, { tool: "session_new", directory })
       const client = await api()
       const session = await client.session.create({
-        location: { directory: input.directory },
+        location: { directory },
         ...(input.title ? { title: input.title } : {}),
         ...(input.agent ? { agent: input.agent } : {}),
         ...(model ? { model } : {}),
@@ -375,7 +446,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { sessionID: string; focus?: boolean }, context) {
-      const session = await requireSession(input.sessionID)
+      const session = await requireSession(input.sessionID, context)
       const results = await tabs.open(session.id, input.focus ?? true)
       return `Asked the TUI to open ${link(session)}. ${tabReport(results)}`
     },
@@ -384,7 +455,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
   const close: ToolDef = {
     name: "session_close",
     description:
-      "Close a session's tab in the user's open TUIs and stop watching it. The session and its history are kept. " +
+      "Close a session's tab in the user's open TUIs and stop your watch on it. The session and its history are kept. " +
       "Refuses while the session is running or waiting for a permission or an answer. Only use it after the user " +
       "confirms the thread is finished.",
     input: {
@@ -395,7 +466,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
     },
     async execute(input: { sessionID: string }, context) {
       if (input.sessionID === context.sessionID) throw new Error("Cannot close your own session.")
-      const session = await requireSession(input.sessionID)
+      const session = await requireSession(input.sessionID, context)
       const client = await api()
       const [active, waiting] = await Promise.all([running(), attention(client, session.id)])
       const needs = [
@@ -406,9 +477,12 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
         throw new Error(`Not closing ${link(session)}: it is waiting for the user (${needs.join("; ")}).`)
       }
       if (active.has(session.id)) throw new Error(`Not closing ${link(session)}: it is still running.`)
-      await state.removeWatch(session.id)
+      // Another session's watch stays; only the caller's own watch ends with the tab.
+      const existing = await state.watch(session.id)
+      const own = existing?.notify === context.sessionID
+      if (own) await state.removeWatch(session.id)
       const results = await tabs.close(session.id)
-      return `Stopped watching ${link(session)}; the session is kept. ${tabReport(results)}`
+      return `Closed ${link(session)}${own ? " and stopped watching it" : ""}; the session is kept. ${tabReport(results)}`
     },
   }
 
@@ -425,7 +499,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       additionalProperties: false,
     },
     async execute(input: { sessionID: string; note?: string }, context) {
-      const session = await requireSession(input.sessionID)
+      if (input.sessionID === context.sessionID) throw new Error("Cannot watch your own session.")
+      const session = await requireSession(input.sessionID, context)
       await state.addWatch({
         sessionID: session.id,
         notify: context.sessionID,
@@ -466,9 +541,9 @@ export async function registerTools(ctx: Context, tools: ToolDef[]) {
         input: tool.input,
         execute: async (input: unknown, context: ToolContext) => {
           // Subagent sessions are not tabs; reports sent to them would never reach the user.
-          if ((await getSession(context.sessionID))?.parentID) {
-            throw new Error(`${tool.name} only works in top-level sessions, not in subagents.`)
-          }
+          const caller = await getSession(context.sessionID)
+          if (!caller) throw new Error(`${tool.name}: could not look up the calling session ${context.sessionID}.`)
+          if (caller.parentID) throw new Error(`${tool.name} only works in top-level sessions, not in subagents.`)
           return { content: await tool.execute(input ?? {}, context) }
         },
       } as never)

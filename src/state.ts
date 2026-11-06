@@ -13,10 +13,18 @@ export interface Watch {
 }
 
 /** Metadata key on user messages the tools send, used to tell those turns from the user's own and route replies. */
-export const PROMPT_METADATA_KEY = "assistant"
+export const PROMPT_METADATA_KEY = "sessions"
+// Written by versions before the rename to opencode-sessions; still read so in-flight turns report back.
+const LEGACY_METADATA_KEY = "assistant"
 
 export function promptMetadata(from: string) {
   return { [PROMPT_METADATA_KEY]: { from } }
+}
+
+/** The sender recorded on a user message by `promptMetadata`, if any. */
+export function promptSender(metadata: Record<string, unknown> | undefined): string | undefined {
+  const value = (metadata?.[PROMPT_METADATA_KEY] ?? metadata?.[LEGACY_METADATA_KEY]) as { from?: unknown } | undefined
+  return typeof value?.from === "string" ? value.from : undefined
 }
 
 const WATCH = "watch/"
@@ -38,6 +46,12 @@ export function createState(storage: Storage) {
         after = page.next
       } while (after)
       return result
+    },
+    /** Drops task watches (not explicit ones) started before `before`. */
+    async prune(before: number) {
+      for (const watch of await this.watches()) {
+        if (!watch.explicit && watch.since < before) await storage.remove(WATCH + watch.sessionID)
+      }
     },
   }
 }

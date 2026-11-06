@@ -1,4 +1,4 @@
-import { Rpc } from "@opencode/plugin/rpc"
+import { Rpc } from "@opencode/plugin"
 
 const openEvent = {
   schema: {
@@ -19,8 +19,8 @@ const closeEvent = {
 } as const
 
 // Events go from the server plugin to every connected TUI, which owns the tabs; TUIs report back through `ack`.
-export const AssistantRpc = Rpc.define({
-  id: "assistant",
+export const SessionsRpc = Rpc.define({
+  id: "sessions",
   methods: {
     ack: {
       input: {

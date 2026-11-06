@@ -3,7 +3,7 @@
 import { Plugin } from "@opencode/plugin/tui"
 import { BoxRenderable, TextRenderable, type MouseEvent } from "@opentui/core"
 import type { SessionInfo } from "@opencode/client"
-import { AssistantRpc } from "./rpc.ts"
+import { SessionsRpc } from "./rpc.ts"
 
 type TuiContext = Plugin.Context
 
@@ -57,7 +57,7 @@ function sessionLink(context: TuiContext, sessionID: string): TextRenderable {
 async function showInbox(context: TuiContext) {
   const route = context.ui.router.current()
   if (route.type !== "session") {
-    context.ui.toast.show({ title: "Assistant", message: "Open a session first.", variant: "warning" })
+    context.ui.toast.show({ title: "Sessions", message: "Open a session first.", variant: "warning" })
     return
   }
   const response = await context.client.message.list({
@@ -70,7 +70,9 @@ async function showInbox(context: TuiContext) {
     if (message.type !== "synthetic") return []
     const metadata = message.metadata ?? {}
     const childID = typeof metadata.childID === "string" ? metadata.childID : undefined
-    if (!childID || typeof metadata.assistant !== "string") return []
+    // `assistant` is the key written before the rename to opencode-sessions.
+    const kind = metadata.sessions ?? metadata.assistant
+    if (!childID || typeof kind !== "string") return []
     const category = new Date(message.time.created).toLocaleString()
     const events = Array.isArray(metadata.events) ? metadata.events : []
     const batched = events.flatMap((item) => {
@@ -80,10 +82,10 @@ async function showInbox(context: TuiContext) {
     })
     if (batched.length > 0) return batched
     const name = typeof metadata.agent === "string" ? metadata.agent : childID
-    return [{ title: `${name} · ${metadata.assistant}`, value: childID, description: message.description, category }]
+    return [{ title: `${name} · ${kind}`, value: childID, description: message.description, category }]
   })
   if (options.length === 0) {
-    context.ui.toast.show({ title: "Assistant", message: "No session reports in this session yet.", variant: "info" })
+    context.ui.toast.show({ title: "Sessions", message: "No session reports in this session yet.", variant: "info" })
     return
   }
   const selected = await context.ui.dialog.select({ title: "Session reports", options: options.slice(0, 30) })
@@ -95,15 +97,15 @@ function Commands(props: { context: TuiContext }) {
     mode: "global",
     commands: [
       {
-        id: "assistant.inbox",
+        id: "sessions.inbox",
         title: "Session reports",
         description: "Jump to a session that reported back to the current session",
-        group: "Assistant",
+        group: "Sessions",
         palette: true,
         slash: { name: "go", aliases: ["inbox"] },
         run: () => {
           showInbox(props.context).catch((error) =>
-            props.context.ui.toast.show({ title: "Assistant", message: String(error), variant: "error" }),
+            props.context.ui.toast.show({ title: "Sessions", message: String(error), variant: "error" }),
           )
         },
       },
@@ -113,7 +115,7 @@ function Commands(props: { context: TuiContext }) {
 }
 
 export default Plugin.define({
-  id: "assistant",
+  id: "sessions",
   setup(context) {
     // ```session blocks in replies become clickable links to those sessions.
     const unregister = context.markdown.registerCodeBlockRenderer("session", (token) => {
@@ -124,7 +126,7 @@ export default Plugin.define({
       return box
     })
     const slot = context.ui.slot({ append: "app", render: () => <Commands context={context} /> })
-    const rpc = context.client.rpc(AssistantRpc)
+    const rpc = context.client.rpc(SessionsRpc)
     // RPC methods route by location, so answer at the location of the server plugin that emitted the event.
     const ack = (event: { data: unknown; location: { directory: string } }, result: string) => {
       const requestID = (event.data as { requestID?: unknown }).requestID
@@ -154,7 +156,7 @@ export default Plugin.define({
         result = context.ui.tabs.open(sessionID) ? "opened in background" : "not opened (tabs disabled)"
       }
       const name = context.data.session.get(sessionID)?.title ?? sessionID
-      context.ui.toast.show({ title: "Assistant", message: `${name}: ${result}`, variant: "info", duration: 2500 })
+      context.ui.toast.show({ title: "Sessions", message: `${name}: ${result}`, variant: "info", duration: 2500 })
       ack(event, result)
     })
     const stopClose = rpc.events.on("tab.close", (event) => {

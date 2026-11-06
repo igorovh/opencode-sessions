@@ -1,14 +1,14 @@
 import type { Plugin } from "@opencode/plugin"
 import type { OpenCodeEvent, SessionInfo } from "@opencode/client"
 import { createNotifier, type Kind } from "./notifier.ts"
-import { messages, promptedBy, rootSession } from "./sessions.ts"
+import { getSession, messages, promptedBy, rootSession } from "./sessions.ts"
 import type { State } from "./state.ts"
 import { messageText, truncate } from "./text.ts"
 
 type Context = Plugin.Context
 
 // Plugin reloads can leave an old instance subscribed; only the newest one may notify, and dedupe is shared.
-const registry: { generation: number; seen: Set<string> } = ((globalThis as any).__opencodeAssistantWatcher ??= {
+const registry: { generation: number; seen: Set<string> } = ((globalThis as any).__opencodeSessionsWatcher ??= {
   generation: 0,
   seen: new Set<string>(),
 })
@@ -31,7 +31,13 @@ export function startWatcher(ctx: Context, state: State): () => void {
   async function target(sessionID: string): Promise<string | undefined> {
     const watch = await state.watch(sessionID)
     const notify = (await promptedBy(sessionID)) ?? (watch?.explicit ? watch.notify : undefined)
-    return notify && notify !== sessionID ? notify : undefined
+    if (!notify || notify === sessionID) return undefined
+    if (!(await getSession(notify))) {
+      // The receiving session was deleted; drop its watch instead of reporting into nothing.
+      if (watch?.notify === notify) await state.removeWatch(sessionID)
+      return undefined
+    }
+    return notify
   }
 
   async function notify(session: SessionInfo, kind: Kind, detail: string, body: string) {
@@ -95,11 +101,11 @@ export function startWatcher(ctx: Context, state: State): () => void {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
           if (!live()) return
-          void handle(event as OpenCodeEvent).catch((error) => console.error("[assistant] event failed", error))
+          void handle(event as OpenCodeEvent).catch((error) => console.error("[sessions] event failed", error))
         }
       } catch (error) {
         if (controller.signal.aborted) return
-        console.error("[assistant] event stream failed", error)
+        console.error("[sessions] event stream failed", error)
       }
       await new Promise((resolve) => setTimeout(resolve, 2000))
     }
