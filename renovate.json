@@ -1,8 +1,22 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "dependencyDashboard": true,
   "rangeStrategy": "bump",
+  "platformAutomerge": true,
+  "automergeType": "pr",
+  "rebaseWhen": "behind-base-branch",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "schedule": ["before 6am on monday"]
+  },
   "packageRules": [
+    {
+      "description": "Merge every update once the required CI checks pass; a red major stays open",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "major"],
+      "automerge": true
+    },
     {
       "description": "Plugin host modules move together with the OpenCode release they match",
       "groupName": "OpenCode host",

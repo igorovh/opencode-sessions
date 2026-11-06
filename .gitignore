@@ -1,6 +1,3 @@
 node_modules/
 *.log
 .DS_Store
-
-# Per-user assistant notes, never committed.
-memory/
