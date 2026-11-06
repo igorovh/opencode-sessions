@@ -1,8 +1,9 @@
 {
   "name": "opencode-sessions",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "OpenCode V2 plugin: any session can start, prompt, watch, read and search your other sessions, and hear back when they finish",
   "type": "module",
+  "packageManager": "bun@1.4.4",
   "license": "MIT",
   "author": "igorovh",
   "homepage": "https://github.com/igorovh/opencode-sessions#readme",
@@ -14,13 +15,29 @@
     "type": "git",
     "url": "git+https://github.com/igorovh/opencode-sessions.git"
   },
-  "keywords": ["opencode", "opencode-plugin", "opencode-v2", "sessions", "multi-agent", "orchestration", "tui"],
-  "files": ["src", "tui.ts", "index.ts", "README.md", "LICENSE"],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-v2",
+    "sessions",
+    "multi-agent",
+    "orchestration",
+    "tui"
+  ],
+  "files": [
+    "src",
+    "dist",
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/index.ts",
-    "./tui": "./src/tui.tsx"
+    "./tui": "./dist/tui.js"
   },
   "scripts": {
+    "compile": "bun script/compile.ts",
+    "check:dist": "bun script/check-dist.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -34,10 +51,18 @@
     "solid-js": ">=1.9.0"
   },
   "peerDependenciesMeta": {
-    "@opencode/plugin": { "optional": true },
-    "@opentui/core": { "optional": true },
-    "@opentui/solid": { "optional": true },
-    "solid-js": { "optional": true }
+    "@opencode/plugin": {
+      "optional": true
+    },
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    },
+    "solid-js": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@opencode/plugin": "2.2.5",
