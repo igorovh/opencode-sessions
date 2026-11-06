@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { clamp, escapeAttr, escapeText, oneLine, truncate } from "../src/text.ts"
-import { parseModel, parseScope } from "../src/tools.ts"
+import { buildTools, parseModel, parseScope } from "../src/tools.ts"
 
 describe("clamp", () => {
   test("uses the fallback for missing or non-finite input", () => {
@@ -56,4 +56,14 @@ test("parseScope defaults to all for anything but project", () => {
   expect(parseScope("project")).toBe("project")
   expect(parseScope(undefined)).toBe("all")
   expect(parseScope("PROJECT")).toBe("all")
+})
+
+test("model options in the plugin config no longer pick a model for the agent", () => {
+  const ctx = { options: { model: "acme/legacy-model", variant: "high" } } as any
+  const tools = buildTools(ctx, {} as any, {} as any)
+  for (const name of ["session_new", "session_send"]) {
+    const description = tools.find((tool) => tool.name === name)!.description
+    expect(description).toContain("Pass model/variant only when the user names one")
+    expect(description).not.toContain("acme/legacy-model")
+  }
 })

@@ -1,6 +1,6 @@
 {
   "name": "opencode-sessions",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OpenCode V2 plugin: any session can start, prompt, watch, read and search your other sessions, and hear back when they finish",
   "type": "module",
   "license": "MIT",

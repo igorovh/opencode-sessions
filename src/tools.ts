@@ -63,12 +63,7 @@ export function parseModel(model: string | undefined, variant: string | undefine
   return { providerID, id, ...(trimmedVariant ? { variant: trimmedVariant } : {}) }
 }
 
-function modelHint(options: Context["options"]): string {
-  const model = typeof options.model === "string" ? options.model.trim() : ""
-  const variant = typeof options.variant === "string" ? options.variant.trim() : ""
-  if (!model) return "Pass model/variant only when the user names one; otherwise the project default is used."
-  return `Unless the user names a model, use model "${model}"${variant ? ` with variant "${variant}"` : ""}.`
-}
+const MODEL_HINT = "Pass model/variant only when the user names one; otherwise the project default is used."
 
 function describeModel(model: ModelChoice | undefined): string {
   if (!model) return ""
@@ -316,7 +311,8 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       "is notified, in a new turn, when the turn you started finishes, fails or needs the user. Turns the user " +
       "starts in that tab do not notify you. Write a self-contained prompt. Do not wait, poll or re-read the " +
       "session after sending. Optional model/variant switch the session's model before the prompt; the switch " +
-      "stays for later turns and, if the session is busy, also applies to its current turn.",
+      "stays for later turns and, if the session is busy, also applies to its current turn. " +
+      MODEL_HINT,
     input: {
       type: "object",
       properties: {
@@ -380,7 +376,7 @@ export function buildTools(ctx: Context, state: State, tabs: Tabs): ToolDef[] {
       "notified, in a new turn, when its first turn finishes, fails or needs the user. Unless open is false, it " +
       "opens as a tab in the user's TUI. With focus (default true) that tab becomes the active one; with focus " +
       "false it is added in the background. The result says whether a TUI confirmed it. " +
-      modelHint(ctx.options),
+      MODEL_HINT,
     input: {
       type: "object",
       properties: {

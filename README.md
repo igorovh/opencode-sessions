@@ -36,7 +36,7 @@ Install the plugin from GitHub with the OpenCode CLI. Pin a release tag: it keep
 OpenCode check for updates.
 
 ```sh
-opencode plugin add github:igorovh/opencode-sessions#v0.2.0
+opencode plugin add github:igorovh/opencode-sessions#v0.3.0
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. One entry loads both
@@ -48,7 +48,7 @@ You can also add the entry to the config yourself:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:igorovh/opencode-sessions#v0.2.0"]
+  "plugins": ["github:igorovh/opencode-sessions#v0.3.0"]
 }
 ```
 
@@ -72,16 +72,13 @@ fixes the flaky login test". When that session finishes, the session you asked g
 {
   "plugins": [
     {
-      "package": "github:igorovh/opencode-sessions#v0.2.0",
-      "options": { "model": "anthropic/claude-opus-5-5", "variant": "medium", "scope": "all" }
+      "package": "github:igorovh/opencode-sessions#v0.3.0",
+      "options": { "scope": "project" }
     }
   ]
 }
 ```
 
-- `model`: the model `session_new` uses unless you name another, as `"providerID/modelID"`. Without it, new
-  sessions use your default model.
-- `variant`: the model variant to use with `model`.
 - `scope`: which sessions the tools can see. `"all"` (default) covers every project. `"project"` limits listing,
   reading, searching and prompting to sessions of the caller's own project. Directories outside a git repository
   share one project.
@@ -110,8 +107,8 @@ Details:
   `open: false` to skip the tab. The result says what the TUI did (for example `TUI: opened and focused.`), or that
   no TUI confirmed it.
 - `session_new` and `session_send` accept an optional `model` (`"providerID/modelID"`) and `variant` (for example
-  `"medium"`; requires `model`). `session_send` switches the session's model before sending, and the switch stays
-  for later turns.
+  `"medium"`; requires `model`). The agent passes them only when you name a model; otherwise the project's default
+  model is used. `session_send` switches the session's model before sending, and the switch stays for later turns.
 - `session_close` refuses while the session is running or waiting for a permission or an answer.
 - A session has one explicit watcher. `session_watch` from another session replaces it, and `session_unwatch` only
   removes your own watch.
