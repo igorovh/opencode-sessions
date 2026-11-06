@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "rangeStrategy": "bump",
+  "packageRules": [
+    {
+      "description": "Plugin host modules move together with the OpenCode release they match",
+      "groupName": "OpenCode host",
+      "matchPackageNames": ["@opencode/**", "@opentui/**", "solid-js"]
+    },
+    {
+      "description": "Peer ranges state the oldest supported host; raise them by hand",
+      "matchDepTypes": ["peerDependencies"],
+      "enabled": false
+    }
+  ]
+}
