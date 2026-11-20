@@ -66,10 +66,10 @@
   },
   "devDependencies": {
     "@opencode/plugin": "2.3.2",
-    "@opentui/core": "0.9.3",
-    "@opentui/solid": "0.9.3",
+    "@opentui/core": "0.9.7",
+    "@opentui/solid": "0.9.7",
     "@types/bun": "1.4.5",
-    "solid-js": "1.9.19",
+    "solid-js": "1.9.20",
     "typescript": "7.0.2"
   }
 }
