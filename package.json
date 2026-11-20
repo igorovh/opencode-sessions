@@ -3,7 +3,7 @@
   "version": "0.3.1",
   "description": "OpenCode V2 plugin: any session can start, prompt, watch, read and search your other sessions, and hear back when they finish",
   "type": "module",
-  "packageManager": "bun@1.4.4",
+  "packageManager": "bun@1.4.5",
   "license": "MIT",
   "author": "igorovh",
   "homepage": "https://github.com/igorovh/opencode-sessions#readme",
@@ -68,7 +68,7 @@
     "@opencode/plugin": "2.3.2",
     "@opentui/core": "0.9.3",
     "@opentui/solid": "0.9.3",
-    "@types/bun": "1.4.4",
+    "@types/bun": "1.4.5",
     "solid-js": "1.9.19",
     "typescript": "7.0.2"
   }
